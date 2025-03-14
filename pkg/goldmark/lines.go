@@ -12,32 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-syntax = "proto3";
-package notedown.nd.v1alpha1;
+package goldmark
 
-import "google/protobuf/any.proto";
+import "github.com/yuin/goldmark/ast"
 
-option go_package = "github.com/notedownorg/nd/api/v1alpha1;v1alpha1";
-
-message Document {
-    string id = 1;  
-    string workspace = 2;
-    repeated string children = 3;
-
-    // Use array to maintain order
-    message MetadataEntry {
-        string key = 1;
-        google.protobuf.Any value = 2;
-    }
-    repeated MetadataEntry metadata = 4;
+func End(start int, n ast.Node) int {
+	if n.Lines().Len() > 0 {
+		return n.Lines().At(n.Lines().Len() - 1).Stop
+	}
+	return start
 }
-
-message Section {
-    string id = 1;
-    string parent = 2;
-
-    string title = 3;
-    int32 level = 4;
-}
-
-

@@ -12,32 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-syntax = "proto3";
-package notedown.nd.v1alpha1;
+package frontmatter
 
-import "google/protobuf/any.proto";
+import (
+	"github.com/yuin/goldmark"
+	gparser "github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/util"
+)
 
-option go_package = "github.com/notedownorg/nd/api/v1alpha1;v1alpha1";
+var Extension goldmark.Extender = &extension{}
 
-message Document {
-    string id = 1;  
-    string workspace = 2;
-    repeated string children = 3;
+type extension struct{}
 
-    // Use array to maintain order
-    message MetadataEntry {
-        string key = 1;
-        google.protobuf.Any value = 2;
-    }
-    repeated MetadataEntry metadata = 4;
+func (e *extension) Extend(m goldmark.Markdown) {
+	m.Parser().AddOptions(gparser.WithBlockParsers(util.Prioritized(&parser{}, 0)))
 }
-
-message Section {
-    string id = 1;
-    string parent = 2;
-
-    string title = 3;
-    int32 level = 4;
-}
-
-

@@ -15,7 +15,7 @@
 syntax = "proto3";
 package notedown.nd.v1alpha1;
 
-option go_package = "github.com/notedownorg/notedown/api/v1alpha1;v1alpha1";
+option go_package = "github.com/notedownorg/nd/api/v1alpha1;v1alpha1";
 
 import "nodes/v1alpha1/types.proto";
 
