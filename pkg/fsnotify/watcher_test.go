@@ -24,21 +24,19 @@ import (
 	"time"
 
 	"github.com/notedownorg/nd/pkg/fsnotify"
+	"github.com/notedownorg/nd/pkg/test/words"
 	"github.com/stretchr/testify/assert"
-	"github.com/tjarratt/babble"
 )
-
-var babbler = babble.NewBabbler()
 
 func randomFile(root string) string {
 	var b strings.Builder
 	b.WriteString(root)
 	b.WriteString("/")
-	for range rand.Intn(3) {
-		b.WriteString(babbler.Babble())
+	for range rand.Intn(5) {
+		b.WriteString(words.Random())
 		b.WriteString("/")
 	}
-	b.WriteString(babbler.Babble())
+	b.WriteString(words.Random())
 	b.WriteString(".file")
 	return b.String()
 }
@@ -63,7 +61,7 @@ func TestRecursiveWatcher(t *testing.T) {
 		}
 
 		// Create
-		content := babbler.Babble()
+		content := words.Random()
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -73,7 +71,7 @@ func TestRecursiveWatcher(t *testing.T) {
 		switch rand.Intn(3) {
 		case 0: // Update
 			slog.Debug("updating file", "path", path)
-			content = babbler.Babble()
+			content = words.Random()
 			if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 				t.Fatal(err)
 			}

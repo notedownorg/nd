@@ -25,6 +25,7 @@ format:
 
 generate:
 	nix develop --command buf generate
+	nix develop --command go generate ./...
 
 dirty:
 	nix develop --command git diff --exit-code
