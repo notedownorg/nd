@@ -12,32 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-syntax = "proto3";
-package notedown.nd.v1alpha1;
+package node
 
-import "google/protobuf/any.proto";
-
-option go_package = "github.com/notedownorg/nd/api/v1alpha1;v1alpha1";
-
-message Document {
-    string id = 1;  
-    string workspace = 2;
-    repeated string children = 3;
-
-    // Use array to maintain order
-    message MetadataEntry {
-        string key = 1;
-        google.protobuf.Any value = 2;
-    }
-    repeated MetadataEntry metadata = 4;
+// Placeholder nodes are used to represent areas of the document that are not parsed.
+// They are primarily used to maintain the original markdown structure when we write back to disk
+type placeholder struct {
+	node
+	content []byte
 }
 
-message Section {
-    string id = 1;
-    string parent = 2;
+var placeholderKind kind = "Placeholder"
 
-    string title = 3;
-    int32 level = 4;
+func NewPlaceholder(data []byte) *placeholder {
+	return &placeholder{
+		node:    newNode(placeholderKind),
+		content: data,
+	}
 }
 
-
+func (p placeholder) Markdown() string {
+	return string(p.content)
+}

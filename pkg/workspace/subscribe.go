@@ -12,32 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-syntax = "proto3";
-package notedown.nd.v1alpha1;
+package workspace
 
-import "google/protobuf/any.proto";
+type operation int
 
-option go_package = "github.com/notedownorg/nd/api/v1alpha1;v1alpha1";
+const (
+	// We have finished loading all nodes that were present at time of subscribing
+	InitializationComplete operation = iota
 
-message Document {
-    string id = 1;  
-    string workspace = 2;
-    repeated string children = 3;
+	// This node was present at time of subscribing
+	Load
 
-    // Use array to maintain order
-    message MetadataEntry {
-        string key = 1;
-        google.protobuf.Any value = 2;
-    }
-    repeated MetadataEntry metadata = 4;
-}
+	// A node has been updated or created
+	Change
 
-message Section {
-    string id = 1;
-    string parent = 2;
-
-    string title = 3;
-    int32 level = 4;
-}
-
-
+	// A node has been deleted
+	Delete
+)
