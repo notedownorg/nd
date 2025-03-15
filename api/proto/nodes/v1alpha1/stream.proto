@@ -25,23 +25,25 @@ service NodeService {
 
 message StreamRequest {
     oneof request {
-        Watch watch = 1;
+        Subscription subscription = 1;
         // Query query = 2;
         // Mutation mutation = 2;
     }
 }
 
-message Watch {
-    DocumentWatch document_watch = 1;
-    SectionWatch section_watch = 2;
+message Subscription {
+    oneof subscription {
+        DocumentSubscription document_subscription = 1;
+        SectionSubscription section_subscription = 2;
+    }
 }
 
-message DocumentWatch {
-    string watch_id = 1;
+message DocumentSubscription {
+    string subscription_id = 1;
 }
 
-message SectionWatch {
-    string watch_id = 1;
+message SectionSubscription {
+    string subscription_id = 1;
 }
 
 message StreamEvent {
@@ -53,14 +55,14 @@ message StreamEvent {
     }
 }
 
-// Indicates the completion of the initialization of a watch request
+// Indicates the completion of the initialization of a subscribe request
 message InitializationComplete {
-    string watch_id = 1;
+    string subscription_id = 1;
 }
 
-// Indicates that a node has been loaded as part of a watch request
+// Indicates that a node has been loaded as part of a subscribe request
 message Load {
-    string watch_id = 1;
+    string subscription_id = 1;
     oneof node {
         Document document = 10;
         Section section = 11;
@@ -69,7 +71,7 @@ message Load {
 
 // Indicates that a node has been created or updated
 message Change {
-    string watch_id = 1;
+    string subscription_id = 1;
     oneof node {
         Document document = 10;
         Section section = 11;
@@ -78,7 +80,7 @@ message Change {
 
 // Indicates that a node has been deleted
 message Delete {
-    string watch_id = 1;
+    string subscription_id = 1;
     oneof node {
         string document_id = 10;
         string section_id = 11;

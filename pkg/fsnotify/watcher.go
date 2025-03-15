@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -30,7 +31,8 @@ type RecursiveWatcher struct {
 	events chan fsnotify.Event
 	errors chan error
 
-	watchers map[string]struct{}
+	watchersMutex *sync.RWMutex
+	watchers      map[string]struct{}
 }
 
 type Option func(*RecursiveWatcher)
@@ -53,7 +55,9 @@ func NewRecursiveWatcher(root string, opts ...Option) (*RecursiveWatcher, error)
 		w:           w,
 		events:      make(chan fsnotify.Event),
 		errors:      make(chan error),
-		watchers:    make(map[string]struct{}),
+
+		watchersMutex: &sync.RWMutex{},
+		watchers:      make(map[string]struct{}),
 	}
 
 	for _, opt := range opts {
@@ -108,7 +112,10 @@ func (rw *RecursiveWatcher) add(path string) {
 	slog.Debug("processing path", "path", path)
 
 	// Check if the path is already being watched
-	if _, ok := rw.watchers[path]; ok {
+	rw.watchersMutex.RLock()
+	_, ok := rw.watchers[path]
+	rw.watchersMutex.RUnlock()
+	if ok {
 		slog.Debug("path already being watched", "path", path)
 		return
 	}
@@ -135,7 +142,9 @@ func (rw *RecursiveWatcher) add(path string) {
 	}
 
 	// Add the path to the watchers map
+	rw.watchersMutex.Lock()
 	rw.watchers[path] = struct{}{}
+	rw.watchersMutex.Unlock()
 	slog.Debug("watching path", "path", path)
 
 	// Iterate over all the entries in the directory (subdirectories) and recurse
