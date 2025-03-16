@@ -12,24 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package node
+package filesystem
 
-// Placeholder nodes are used to represent areas of the document that are not parsed.
-// They are primarily used to maintain the original markdown structure when we write back to disk
-type Placeholder struct {
-	node
-	content []byte
-}
+import (
+	"log/slog"
+	"os"
+	"testing"
+)
 
-var PlaceHolderKind kind = "Placeholder"
-
-func NewPlaceholder(data []byte) *Placeholder {
-	return &Placeholder{
-		node:    newNode(PlaceHolderKind),
-		content: data,
-	}
-}
-
-func (p Placeholder) Markdown() string {
-	return string(p.content)
+func TestMain(m *testing.M) {
+	// change to debug if you want to see the events, too noisy to leave on permanently though
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo.Level()})))
+	os.Exit(m.Run())
 }

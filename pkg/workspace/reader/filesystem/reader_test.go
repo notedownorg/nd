@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package reader
+package filesystem
 
 import (
 	"testing"
@@ -25,7 +25,7 @@ func TestDocuments_Client(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := NewClient("testclient", dir)
+	client, err := NewReader("testclient", dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func loadtestDocuments_Client(count int, t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := NewClient("testclient", dir)
+	client, err := NewReader("testclient", dir)
 	if err != nil {
 		t.Fatal(err)
 	}

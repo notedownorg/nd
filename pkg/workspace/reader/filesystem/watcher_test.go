@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package reader
+package filesystem
 
 import (
 	"math/rand"
@@ -29,7 +29,7 @@ func TestDocuments_Client_Watcher(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := NewClient("testclient", dir)
+	client, err := NewReader("testclient", dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestDocuments_Client_Watcher_Fuzz(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := NewClient("testclient", dir)
+	client, err := NewReader("testclient", dir)
 	if err != nil {
 		t.Fatal(err)
 	}

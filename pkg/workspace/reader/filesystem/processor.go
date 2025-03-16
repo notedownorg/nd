@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package reader
+package filesystem
 
 import (
 	"context"
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/notedownorg/nd/pkg/workspace/reader"
 )
 
 func (r *Reader) processFile(path string, load bool) {
@@ -41,14 +43,14 @@ func (r *Reader) processFile(path string, load bool) {
 		r.docMutex.Unlock()
 
 		r.log.Debug("emitting event", "file", path, "relative", rel)
-		op := func() Operation {
+		op := func() reader.Operation {
 			if load {
-				return Load
+				return reader.Load
 			} else {
-				return Change
+				return reader.Change
 			}
 		}()
-		r.events <- Event{Op: op, Id: rel, Content: content}
+		r.events <- reader.Event{Op: op, Id: rel, Content: content}
 	}()
 }
 

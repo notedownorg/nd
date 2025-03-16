@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package reader
+package filesystem
 
 import (
 	"fmt"
@@ -62,7 +62,7 @@ func generateTestData(name string, fileCount int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for i := 0; i < fileCount; i++ {
+	for i := range fileCount {
 		content := fmt.Sprintf("# Test Document %v", i) // maybe put more meaningful content here
 		if err := writeFile(dir, fmt.Sprintf("%v.md", i), content); err != nil {
 			return "", err
