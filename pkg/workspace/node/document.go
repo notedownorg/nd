@@ -28,12 +28,16 @@ type Document struct {
 	metadata
 }
 
-var documentKind kind = "Document"
+var DocumentKind kind = "Document"
 
-func NewDocument() *Document {
+func NewDocument(key string) *Document {
 	return &Document{
-		branchNode: newBranchNode(documentKind),
+		branchNode: newBranchNode(DocumentKind, branchNodeWithId(key)),
 	}
+}
+
+func DocumentId(key string) string {
+	return idFromKind(DocumentKind, key)
 }
 
 // Override markdown to include metadata
@@ -59,22 +63,6 @@ func (d *Document) Markdown() string {
 
 	builder.WriteString(d.branchNode.Markdown())
 	return builder.String()
-}
-
-// Override AddChild to automatically merge placeholders
-func (d *Document) AddChild(child Node) {
-	if len(d.children) > 0 {
-		last := d.children[len(d.children)-1]
-		if pLast, ok := last.(*placeholder); ok {
-			if pNew, ok := child.(*placeholder); ok {
-				pLast.content = append(pLast.content, pNew.content...)
-				return
-			}
-		}
-	}
-
-	// Otherwise just add the child as normal
-	d.branchNode.AddChild(child)
 }
 
 func (d *Document) SetMetadata(root *yaml.Node) {

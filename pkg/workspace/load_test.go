@@ -15,16 +15,57 @@
 package workspace
 
 import (
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/notedownorg/nd/pkg/test/words"
 	. "github.com/notedownorg/nd/pkg/workspace/node"
+	"github.com/notedownorg/nd/pkg/workspace/reader/mock"
 )
 
+// Test that we correctly handle graph updates by testing the invariants:
+// - For any given random sequence of events, we should be able to recreate the workspace file system exactly from the graph
+func TestWorkspace_Reader(t *testing.T) {
+	data := loadFilesToBytes(t, "testdata")
+
+	reader := mock.NewReader()
+	ws, err := NewWorkspace("test", reader)
+	defer ws.Close()
+	assert.NoError(t, err)
+
+	for range 10000 {
+		content := data[rand.IntN(len(data))]
+		switch rand.IntN(4) {
+		case 0:
+			reader.Add(words.Random()+".md", content)
+		case 1:
+			reader.Update(reader.RandomFile(), content)
+		case 2:
+			reader.Remove(reader.RandomFile())
+		case 3:
+			reader.Rename(reader.RandomFile(), words.Random()+".md")
+		}
+	}
+
+	time.Sleep(1 * time.Second)
+	want, got := make(map[string]string), make(map[string]string)
+	for _, key := range reader.ListFiles() {
+		want[DocumentId(key)] = string(reader.GetContent(key))
+	}
+	for _, doc := range ws.documents {
+		got[doc.ID()] = doc.Markdown()
+	}
+
+	assert.Equal(t, want, got)
+}
+
+// Test we handle the different structures possible within markdown relative to our model
 func TestWorkspace_LoadDocument(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -78,13 +119,12 @@ func TestWorkspace_LoadDocument(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ws, err := NewWorkspace(".")
-			require.NoError(t, err)
+			ws := Workspace{documents: make(map[string]*Document)}
 
 			content, err := os.ReadFile(filepath.Join("testdata", tt.filename))
 			require.NoError(t, err)
 
-			ws.loadDocument(content)
+			ws.loadDocument("test.md", content)
 
 			// Since we don't have access to the document ID directly,
 			// we'll get the first (and only) document from the workspace

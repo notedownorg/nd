@@ -15,144 +15,52 @@
 package workspace
 
 import (
-	"bytes"
-	"fmt"
 	"log/slog"
-	"strings"
 
-	"github.com/notedownorg/nd/pkg/fsnotify"
-	utils "github.com/notedownorg/nd/pkg/goldmark"
-	"github.com/notedownorg/nd/pkg/goldmark/extensions/frontmatter"
 	. "github.com/notedownorg/nd/pkg/workspace/node"
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/text"
-	"gopkg.in/yaml.v3"
+	"github.com/notedownorg/nd/pkg/workspace/reader"
 )
 
 type Workspace struct {
-	watcher *fsnotify.RecursiveWatcher
+	log     *slog.Logger
+	closers []func()
 
 	// Nodes stored by kind for faster lookup
 	// ids are prefixed with the kind if we need to workout which map to look in see kindFromID
 	documents map[string]*Document
-
-	// config
-	waitForInitialLoad bool
 }
 
-type WorkspaceOption func(*Workspace)
-
-func WaitForInitialLoad() WorkspaceOption {
-	return func(w *Workspace) {
-		w.waitForInitialLoad = true
-	}
-}
-
-func NewWorkspace(root string, opts ...WorkspaceOption) (*Workspace, error) {
-	watcher, err := fsnotify.NewRecursiveWatcher(root)
-	if err != nil {
-		return nil, err
-	}
+func NewWorkspace(name string, r reader.Reader) (*Workspace, error) {
 	ws := &Workspace{
-		watcher:   watcher,
+		log:       slog.Default().With("workspace", name),
 		documents: make(map[string]*Document),
+		closers:   make([]func(), 0, 2),
 	}
 
-	for _, opt := range opts {
-		opt(ws)
-	}
+	readerSubscription := make(chan reader.Event)
+	subId := r.Subscribe(readerSubscription, true)
+	ws.closers = append(ws.closers, func() { r.Unsubscribe(subId); close(readerSubscription) })
 
-	// TODO: wait for initial load
+	go ws.processDocuments(readerSubscription)
+
 	return ws, nil
 }
 
-var md = goldmark.New(goldmark.WithExtensions(frontmatter.Extension))
-
-func (w *Workspace) loadDocument(content []byte) {
-	doc := NewDocument()
-
-	// Walk the ast building our graph
-	// ast.Walk(tree, Debug())
-	tree := md.Parser().Parse(text.NewReader([]byte(content)))
-
-	// Keep track of the last position we have processed to ensure we don't lose any content between blocks
-	// Keep track of the parents so we can add children correctly
-	curr, parents := 0, []BranchNode{doc}
-	ast.Walk(tree, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
-		if entering {
-			switch node := node.(type) {
-			case *frontmatter.Frontmatter:
-				if len(node.Yaml) != 0 {
-					var root yaml.Node
-					if err := yaml.Unmarshal(node.Yaml, &root); err != nil {
-						slog.Error("failed to unmarshal yaml", "error", err)
-					}
-					doc.SetMetadata(&root)
-				}
-				curr = utils.End(0, node) + len(node.Closer)
-
-			// If the node is a heading we need to create a new section
-			// Setext headings are not currently supported and will be converted to ATX
-			case *ast.Heading:
-				start, end := node.Lines().At(0).Start, utils.End(curr, node)
-
-				// Maintain the content (usually newlines) between the last block and the current block up to the start of the #
-				prefix := content[curr:start]
-				var buf bytes.Buffer
-				for _, byte := range prefix {
-					if byte == '#' {
-						break
-					}
-					buf.WriteByte(byte)
-				}
-				if len(buf.Bytes()) > 0 {
-					parents[len(parents)-1].AddChild(NewPlaceholder(buf.Bytes()))
-				}
-
-				// If the node level is smaller or equal to the latest section we need to pop the parents
-				if section := RecurseToSection(parents[len(parents)-1]); section != nil && node.Level <= section.Level() {
-					parents = parents[:len(parents)-1]
-				}
-
-				// Now we can create the section
-				section := NewSection(node.Level, string(content[start:end])) // content[start:end] is the title in Goldmark
-				parents[len(parents)-1].AddChild(section)
-				parents = append(parents, section)
-				curr = end
-
-			default:
-				// If the node is a block we're not currently interested in we need to persist so we can write back later
-				if node.Type() == ast.TypeBlock {
-					start := curr
-					end := utils.End(start, node)
-					parents[len(parents)-1].AddChild(NewPlaceholder(content[start:end]))
-					curr = end
-				}
-			}
-		}
-		return ast.WalkContinue, nil
-	})
-
-	// Add the trailing content
-	doc.AddChild(NewPlaceholder(content[curr:]))
-
-	w.documents[doc.ID()] = doc
+func (w *Workspace) Close() {
+	for _, closer := range w.closers {
+		closer()
+	}
 }
 
-func Debug() func(node ast.Node, entering bool) (ast.WalkStatus, error) {
-	depth := 0
-	return func(node ast.Node, entering bool) (ast.WalkStatus, error) {
-		if entering {
-			depth++
-			if depth == 1 {
-				fmt.Printf("%s\n", node.Kind().String())
-			} else {
-				fmt.Printf("%s%s\n", strings.Repeat("    ", depth-1), node.Kind().String())
-			}
-		} else {
-			depth--
-		}
-		return ast.WalkContinue, nil
+func (w *Workspace) deleteNode(id string) {
+	kind := KindFromID(id)
+	switch kind {
+	case DocumentKind:
+		delete(w.documents, id)
+		// TODO: verify that we don't need to delete nodes not accessible from the workspace struct
+		// I think Go garbage collection should take care of this for us?
+	default:
+		return
 	}
+	w.log.Debug("deleted node", "id", id)
 }

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package reader
+package filesystem
 
 import (
 	"math/rand"
@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/notedownorg/nd/pkg/workspace/reader"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -29,7 +30,7 @@ func TestDocuments_Client_Events_SubscribeWithInitialDocuments_Sync(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := NewClient("testclient", dir)
+	client, err := NewReader("testclient", dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,21 +38,21 @@ func TestDocuments_Client_Events_SubscribeWithInitialDocuments_Sync(t *testing.T
 	go ensureNoErrors(t, client.Errors())
 
 	// Create a subscriber and ensure it receives the load complete event
-	sub := make(chan Event)
+	sub := make(chan reader.Event)
 	done := false
 	loaded := 0
 	go func() {
 		for ev := range sub {
-			if ev.Op == SubscriberLoadComplete {
+			if ev.Op == reader.SubscriberLoadComplete {
 				done = true
 			}
-			if ev.Op == Load {
+			if ev.Op == reader.Load {
 				loaded++
 			}
 		}
 	}()
 
-	client.Subscribe(sub, WithInitialDocuments())
+	client.Subscribe(sub, true)
 
 	// Ensure we eventually receive the load complete event and that an event was received for each document
 	waiter := func(d bool) func() bool { return func() bool { return done } }(done)
@@ -66,21 +67,21 @@ func TestDocuments_Client_Events_SubscribeWithInitialDocuments_Async(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := NewClient("testclient", dir)
+	client, err := NewReader("testclient", dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assert.Len(t, client.documents, 1)
 	go ensureNoErrors(t, client.Errors())
 
-	sub := make(chan Event)
+	sub := make(chan reader.Event)
 	got := map[string]bool{}
 
 	go func() {
 		for {
 			select {
 			case ev := <-sub:
-				if ev.Op == Load {
+				if ev.Op == reader.Load {
 					got[ev.Id] = true
 				}
 			}
@@ -88,7 +89,7 @@ func TestDocuments_Client_Events_SubscribeWithInitialDocuments_Async(t *testing.
 	}()
 
 	// Hook them up to the client and ensure we eventually receive all the initial documents
-	client.Subscribe(sub, WithInitialDocuments())
+	client.Subscribe(sub, true)
 	assert.Eventually(t, func() bool { return len(client.documents) == len(got) }, 3*time.Second, time.Millisecond*200, "sub finished with %v documents, expected %v", len(got), len(client.documents))
 }
 
@@ -99,7 +100,7 @@ func TestDocuments_Client_Events_Fuzz(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := NewClient("testclient", dir)
+	client, err := NewReader("testclient", dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,8 +113,8 @@ func TestDocuments_Client_Events_Fuzz(t *testing.T) {
 	}
 
 	// Create two subscribers
-	sub1 := make(chan Event)
-	sub2 := make(chan Event)
+	sub1 := make(chan reader.Event)
+	sub2 := make(chan reader.Event)
 
 	got1, got2 := map[string]bool{}, map[string]bool{}
 	got1Mutex, got2Mutex := sync.Mutex{}, sync.Mutex{}
@@ -123,18 +124,18 @@ func TestDocuments_Client_Events_Fuzz(t *testing.T) {
 			case ev := <-sub1:
 				got1Mutex.Lock()
 				switch ev.Op {
-				case Change:
+				case reader.Change:
 					got1[ev.Id] = true
-				case Delete:
+				case reader.Delete:
 					delete(got1, ev.Id)
 				}
 				got1Mutex.Unlock()
 			case ev := <-sub2:
 				got2Mutex.Lock()
 				switch ev.Op {
-				case Change:
+				case reader.Change:
 					got2[ev.Id] = true
-				case Delete:
+				case reader.Delete:
 					delete(got2, ev.Id)
 				}
 				got2Mutex.Unlock()
@@ -143,8 +144,8 @@ func TestDocuments_Client_Events_Fuzz(t *testing.T) {
 	}()
 
 	// Hook them up to the client
-	client.Subscribe(sub1)
-	client.Subscribe(sub2)
+	client.Subscribe(sub1, false)
+	client.Subscribe(sub2, false)
 
 	// Throw a bunch of events at the client and ensure the subscribers are notified correctly
 	errChan := make(chan error)

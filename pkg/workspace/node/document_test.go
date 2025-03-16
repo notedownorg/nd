@@ -145,7 +145,7 @@ func TestDocument_Markdown(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create document
-			doc := NewDocument()
+			doc := NewDocument("test.md")
 
 			// Set metadata if provided
 			if tt.metadata != nil {

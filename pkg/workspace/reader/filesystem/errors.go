@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package reader
+package filesystem
 
-func (c *Reader) Errors() <-chan error {
-	return c.errors
+func (r *Reader) Errors() <-chan error {
+	return r.errors
 }

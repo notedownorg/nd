@@ -12,20 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package workspace
+package reader
 
-type operation int
+type Reader interface {
+	Subscribe(ch chan Event, loadInitialDocuments bool) int
+	Unsubscribe(int)
+	Errors() <-chan error
+}
+
+type Event struct {
+	Op      Operation
+	Id      string
+	Content []byte
+}
+
+type Operation uint32
 
 const (
-	// We have finished loading all nodes that were present at time of subscribing
-	InitializationComplete operation = iota
+	// Signal that this document was present when the client was created or when the subscriber subscribed
+	Load Operation = iota
 
-	// This node was present at time of subscribing
-	Load
-
-	// A node has been updated or created
+	// Signal that this document has been updated or created
 	Change
 
-	// A node has been deleted
+	// Signal that this document has been deleted
 	Delete
+
+	// Signal that the subscriber has received all existing documents present at the time of subscription
+	SubscriberLoadComplete
 )

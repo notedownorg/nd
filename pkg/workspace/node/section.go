@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-type section struct {
+type Section struct {
 	branchNode
 
 	title string
@@ -28,8 +28,8 @@ type section struct {
 
 var sectionKind kind = "Section"
 
-func NewSection(level int, title string) *section {
-	return &section{
+func NewSection(level int, title string) *Section {
+	return &Section{
 		// include the level when generating the id to avoid collisions
 		branchNode: newBranchNode(sectionKind),
 		title:      title,
@@ -37,12 +37,12 @@ func NewSection(level int, title string) *section {
 	}
 }
 
-func (n *section) Level() int {
+func (n *Section) Level() int {
 	return n.level
 }
 
 // Move sets the parent AND updates the level to match the new parent
-func (n *section) Move(parent BranchNode) {
+func (n *Section) Move(parent BranchNode) {
 	// Keep level in sync with the new parent
 	// Travel up from the current parent to the root node whenever we find a section, increment the depth
 	p, depth := parent, 1
@@ -63,7 +63,7 @@ func (n *section) Move(parent BranchNode) {
 	n.branchNode.SetParent(parent)
 }
 
-func (n *section) Markdown() string {
+func (n *Section) Markdown() string {
 	var builder strings.Builder
 	builder.WriteString(strings.Repeat("#", n.level))
 	builder.WriteString(" ")
@@ -72,10 +72,11 @@ func (n *section) Markdown() string {
 	return builder.String()
 }
 
-func RecurseToSection(node BranchNode) *section {
+// RecurseToSection finds the nearest section node in the parent hierarchy
+func RecurseToSection(node Node) *Section {
 	for node != nil {
 		if node.Kind() == sectionKind {
-			return node.(*section)
+			return node.(*Section)
 		}
 		node = node.Parent()
 	}

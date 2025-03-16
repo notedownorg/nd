@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package reader
+package filesystem
 
 import (
 	"fmt"
@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"github.com/notedownorg/nd/pkg/fsnotify"
+	"github.com/notedownorg/nd/pkg/workspace/reader"
 )
 
 func (r *Reader) fileWatcher() {
@@ -75,7 +76,7 @@ func (r *Reader) handleRemoveEvent(event fsnotify.Event) {
 	r.docMutex.Lock()
 	defer r.docMutex.Unlock()
 	delete(r.documents, rel)
-	r.events <- Event{Op: Delete, Id: rel}
+	r.events <- reader.Event{Op: reader.Delete, Id: rel}
 }
 
 func (r *Reader) handleRenameEvent(event fsnotify.Event) {

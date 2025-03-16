@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package reader
+package filesystem
 
 import (
 	"fmt"
@@ -24,10 +24,13 @@ import (
 	"time"
 
 	"github.com/notedownorg/nd/pkg/fsnotify"
+	"github.com/notedownorg/nd/pkg/workspace/reader"
 	"golang.org/x/sync/semaphore"
 )
 
-// The reader is responsible for processing files on disk and emitting events when changes
+var _ reader.Reader = &Reader{}
+
+// The filesystem reader is responsible for processing files on disk and emitting events when changes
 // to the graph are detected (i.e. a file is added, removed or modified)
 // It is not responsible for parsing the documents, maintaining the graph or handling mutations to the graph/files.
 type Reader struct {
@@ -40,17 +43,17 @@ type Reader struct {
 
 	watcher *fsnotify.RecursiveWatcher
 
-	subscribers []chan Event
+	subscribers map[int]chan reader.Event
 
 	// Everytime a goroutine makes a blocking syscall (in our case usually file i/o) it uses a new thread so to avoid
 	// large workspaces exhausting the thread limit we use a semaphore to limit the number of concurrent goroutines
 	threadLimit *semaphore.Weighted
 
 	errors chan error
-	events chan Event
+	events chan reader.Event
 }
 
-func NewClient(name string, location string) (*Reader, error) {
+func NewReader(name string, location string) (*Reader, error) {
 	if !filepath.IsAbs(location) {
 		return nil, fmt.Errorf("location must be an absolute path got %s", location)
 	}
@@ -66,22 +69,22 @@ func NewClient(name string, location string) (*Reader, error) {
 		documents:   make(map[string]document),
 		docMutex:    sync.RWMutex{},
 		watcher:     watcher,
-		subscribers: make([]chan Event, 0),
+		subscribers: make(map[int]chan reader.Event),
 		threadLimit: semaphore.NewWeighted(1000), // Avoid exhausting golang max threads
 		errors:      make(chan error),
-		events:      make(chan Event),
+		events:      make(chan reader.Event),
 	}
 
 	// Create a subscription so we can listen for the initial load events
-	sub := make(chan Event)
-	subscriberIndex := client.Subscribe(sub)
+	sub := make(chan reader.Event)
+	subscriberIndex := client.Subscribe(sub, true)
 
 	// For each file we process on intial load, a load event is emitted
 	// Therefore if our subscriber has received a load event for each file we have finished the initial load
 	var wg sync.WaitGroup
 	go func() {
 		for ev := range sub {
-			if ev.Op == Load {
+			if ev.Op == reader.Load {
 				wg.Done()
 			}
 		}

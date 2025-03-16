@@ -15,7 +15,6 @@
 package node
 
 import (
-	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -35,6 +34,7 @@ type BranchNode interface {
 	Node
 	AddChild(Node)
 	RemoveChild(Node)
+	DepthFirstSearch(func(Node))
 }
 
 type node struct {
@@ -43,16 +43,42 @@ type node struct {
 	parent BranchNode
 }
 
-func kindFromID(id string) kind {
-	split := strings.Split(id, "/")
+const kindDelimiter = "|"
+
+func KindFromID(id string) kind {
+	split := strings.Split(id, kindDelimiter)
 	return kind(split[0])
 }
 
-func newNode(kind kind) node {
-	return node{
+type nodeOption func(*node)
+
+// nodeWithId will still preserve the kind in the id
+func nodeWithId(id string) nodeOption {
+	return func(n *node) {
+		if strings.HasPrefix(id, string(n.kind)) {
+			n.id = id
+			return
+		}
+		n.id = idFromKind(n.kind, id)
+	}
+}
+
+func idFromKind(kind kind, id string) string {
+	if strings.HasPrefix(id, string(kind)) {
+		return id
+	}
+	return string(kind) + kindDelimiter + id
+}
+
+func newNode(kind kind, opts ...nodeOption) node {
+	n := node{
 		id:   uuid.New().String(),
 		kind: kind,
 	}
+	for _, opt := range opts {
+		opt(&n)
+	}
+	return n
 }
 
 func (n node) ID() string {
@@ -69,45 +95,4 @@ func (n node) Parent() BranchNode {
 
 func (n *node) SetParent(parent BranchNode) {
 	n.parent = parent
-}
-
-type branchNode struct {
-	node
-	children []Node
-}
-
-func newBranchNode(kind kind) branchNode {
-	return branchNode{
-		node:     newNode(kind),
-		children: make([]Node, 0),
-	}
-}
-
-func (n *branchNode) AddChild(child Node) {
-	if child == nil {
-		return
-	}
-
-	child.SetParent(n)
-	n.children = append(n.children, child)
-}
-
-func (n *branchNode) RemoveChild(child Node) {
-	if child == nil {
-		return
-	}
-	for i, c := range n.children {
-		if c.ID() == child.ID() {
-			child.SetParent(nil)
-			n.children = slices.Delete(n.children, i, i+1)
-		}
-	}
-}
-
-func (n *branchNode) Markdown() string {
-	var builder strings.Builder
-	for _, child := range n.children {
-		builder.WriteString(child.Markdown())
-	}
-	return builder.String()
 }
