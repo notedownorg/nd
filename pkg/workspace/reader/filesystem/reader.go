@@ -82,10 +82,9 @@ func NewReader(name string, location string) (*Reader, error) {
 	// For each file we process on intial load, a load event is emitted
 	// Therefore if our subscriber has received a load event for each file we have finished the initial load
 	var wg sync.WaitGroup
-	wg.Add(1) // for the subscriber load complete event
 	go func() {
 		for ev := range sub {
-			if ev.Op == reader.Load || ev.Op == reader.SubscriberLoadComplete {
+			if ev.Op == reader.Load {
 				wg.Done()
 			}
 		}

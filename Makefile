@@ -31,5 +31,5 @@ dirty:
 	nix develop --command git diff --exit-code
 
 test:
-	nix develop --command go test ./...
+	nix develop --command go test -timeout=10s ./...
 
