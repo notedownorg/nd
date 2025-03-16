@@ -24,6 +24,13 @@ func (r *Reader) Subscribe(ch chan reader.Event, loadInitialDocuments bool) int 
 
 	if loadInitialDocuments {
 		go func(s chan reader.Event) {
+			// Recover from a panic if the subscriber has been closed
+			// Likely this will only happen in tests but its theoretically possible in regular usage
+			defer func() {
+				if recover() != nil {
+					r.log.Warn("subscriber closed before initial documents could be loaded")
+				}
+			}()
 			for key := range r.documents {
 				_, content := r.loadDocument(key)
 				if content == nil {
