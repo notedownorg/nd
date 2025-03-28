@@ -15,6 +15,9 @@
 package fsnotify
 
 import (
+	"errors"
+	"os"
+
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -22,6 +25,13 @@ func (rw *RecursiveWatcher) handleCreate(event fsnotify.Event) {
 	// If the event is a directory, add it to the watcher
 	if isDir(event.Name) {
 		rw.add(event.Name)
+	}
+
+	// Check if the file hasn't already been removed before sending the event.
+	// As we have no order guarantee from fsnotify, there's a non-zero chance a client
+	// may get this event after the file has been removed.
+	if _, err := os.Stat(event.Name); errors.Is(err, os.ErrNotExist) {
+		return
 	}
 
 	// Send the event to the events channel
