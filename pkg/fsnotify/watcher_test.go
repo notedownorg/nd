@@ -55,10 +55,10 @@ func randomFile(root string) string {
 }
 
 func TestRecursiveWatcher(t *testing.T) {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug.Level()})))
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo.Level()})))
 
 	dir, _ := os.MkdirTemp("", "testrecursivewatcher")
-	w, _ := fsnotify.NewRecursiveWatcher(dir)
+	w, _ := fsnotify.NewRecursiveWatcher(dir, fsnotify.WithDebounce(time.Millisecond*100))
 
 	// What we want to test is that we get an accurate view of the filesystem based on the events we receive
 	// This because events are non-deteministic even if you dont take ordering into account
@@ -136,6 +136,13 @@ func (f *fileview) add(path string) {
 	f.mutex.Unlock()
 }
 
+func (f *fileview) exists(path string) bool {
+	f.mutex.RLock()
+	_, ok := (*f).files[path]
+	f.mutex.RUnlock()
+	return ok
+}
+
 func (f *fileview) delete(path string) {
 	f.mutex.Lock()
 	delete((*f).files, path)
@@ -146,14 +153,14 @@ func tracker(t *testing.T, w *fsnotify.RecursiveWatcher, view *fileview) {
 	for {
 		select {
 		case event := <-w.Events():
-			if event.Op.Has(fsnotify.Create) {
-				view.add(event.Name)
-			}
-			if event.Op.Has(fsnotify.Remove) || event.Op.Has(fsnotify.Rename) {
-				view.delete(event.Name)
-			}
-			if event.Op.Has(fsnotify.Write) {
-				view.add(event.Name)
+			switch event.Op {
+			case fsnotify.Change:
+				view.add(event.Path)
+			case fsnotify.Remove:
+				if !view.exists(event.Path) {
+					t.Logf("file %s does not exist during remove", event.Path)
+				}
+				view.delete(event.Path)
 			}
 		case err := <-w.Errors():
 			t.Log(err)

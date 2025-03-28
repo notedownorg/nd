@@ -25,6 +25,7 @@ func (rw *RecursiveWatcher) handleCreate(event fsnotify.Event) {
 	// If the event is a directory, add it to the watcher
 	if isDir(event.Name) {
 		rw.add(event.Name)
+		return
 	}
 
 	// Check if the file hasn't already been removed before sending the event.
@@ -35,7 +36,7 @@ func (rw *RecursiveWatcher) handleCreate(event fsnotify.Event) {
 	}
 
 	// Send the event to the events channel
-	rw.events <- event
+	rw.events <- Event{Op: Change, Path: event.Name}
 }
 
 func (rw *RecursiveWatcher) handleRemove(event fsnotify.Event) {
@@ -48,5 +49,5 @@ func (rw *RecursiveWatcher) handleRemove(event fsnotify.Event) {
 	}
 
 	// Send the event to the events channel
-	rw.events <- event
+	rw.events <- Event{Op: Remove, Path: event.Name}
 }
