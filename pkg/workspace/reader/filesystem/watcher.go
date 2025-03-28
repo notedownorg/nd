@@ -29,14 +29,10 @@ func (r *Reader) fileWatcher() {
 		select {
 		case event := <-r.watcher.Events():
 			switch event.Op {
-			case fsnotify.Create:
-				r.handleCreateEvent(event)
+			case fsnotify.Change:
+				r.handleChangeEvent(event)
 			case fsnotify.Remove:
 				r.handleRemoveEvent(event)
-			case fsnotify.Rename:
-				r.handleRenameEvent(event)
-			case fsnotify.Write:
-				r.handleWriteEvent(event)
 			}
 		case err := <-r.watcher.Errors():
 			log.Printf("error: %s", err)
@@ -52,24 +48,24 @@ func isDir(path string) bool {
 	return fi.IsDir()
 }
 
-func (r *Reader) handleCreateEvent(event fsnotify.Event) {
-	if isDir(event.Name) {
-		r.log.Debug("ignoring directory create event", "dir", event.Name)
+func (r *Reader) handleChangeEvent(event fsnotify.Event) {
+	if isDir(event.Path) {
+		r.log.Debug("ignoring directory change event", "dir", event.Path)
 		return
 	}
-	r.log.Debug("handling file create event", "file", event.Name)
-	r.processFile(event.Name, false)
+	r.log.Debug("handling file change event", "file", event.Path)
+	r.processFile(event.Path, false)
 }
 
 func (r *Reader) handleRemoveEvent(event fsnotify.Event) {
-	if isDir(event.Name) {
-		r.log.Debug("ignoring directory remove event", "dir", event.Name)
+	if isDir(event.Path) {
+		r.log.Debug("ignoring directory remove event", "dir", event.Path)
 		return
 	}
-	r.log.Debug("handling file remove event", "file", event.Name)
-	rel, err := r.relative(event.Name)
+	r.log.Debug("handling file remove event", "file", event.Path)
+	rel, err := r.relative(event.Path)
 	if err != nil {
-		r.log.Error("failed to get relative path", "file", event.Name, "error", err)
+		r.log.Error("failed to get relative path", "file", event.Path, "error", err)
 		r.errors <- fmt.Errorf("failed to get relative path: %w", err)
 		return
 	}
@@ -77,22 +73,4 @@ func (r *Reader) handleRemoveEvent(event fsnotify.Event) {
 	defer r.docMutex.Unlock()
 	delete(r.documents, rel)
 	r.events <- reader.Event{Op: reader.Delete, Id: rel}
-}
-
-func (r *Reader) handleRenameEvent(event fsnotify.Event) {
-	if isDir(event.Name) {
-		r.log.Debug("ignoring directory rename event", "dir", event.Name)
-		return
-	}
-	r.log.Debug("handling file rename event", "file", event.Name)
-	r.handleRemoveEvent(event) // rename sends the name of the old file, presumably it sends a create event for the new file
-}
-
-func (r *Reader) handleWriteEvent(event fsnotify.Event) {
-	if isDir(event.Name) {
-		r.log.Debug("ignoring directory write event", "dir", event.Name)
-		return
-	}
-	r.log.Debug("handling file write event", "file", event.Name)
-	r.processFile(event.Name, false)
 }

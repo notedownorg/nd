@@ -14,16 +14,15 @@
 
 package fsnotify
 
-import (
-	"github.com/fsnotify/fsnotify"
-)
+type Operation int
 
-// Provide access to the underlying fsnotify ops.
 const (
-	Create = fsnotify.Create
-	Remove = fsnotify.Remove
-	Rename = fsnotify.Rename
-	Write  = fsnotify.Write
+	// Change can be a new file or a modified file
+	Change Operation = iota
+	Remove
 )
 
-type Event = fsnotify.Event
+type Event struct {
+	Op   Operation
+	Path string
+}

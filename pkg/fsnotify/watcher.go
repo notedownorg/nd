@@ -19,6 +19,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -28,11 +29,15 @@ type RecursiveWatcher struct {
 	ignoredDirs []string
 
 	w      *fsnotify.Watcher
-	events chan fsnotify.Event
+	events chan Event
 	errors chan error
 
 	watchersMutex *sync.RWMutex
 	watchers      map[string]struct{}
+
+	timersMutex *sync.RWMutex
+	timers      map[string]*time.Timer // used to debounce/dedupe events
+	debounce    time.Duration
 }
 
 type Option func(*RecursiveWatcher)
@@ -40,6 +45,12 @@ type Option func(*RecursiveWatcher)
 func WithIgnoredDirs(dirs []string) Option {
 	return func(rw *RecursiveWatcher) {
 		rw.ignoredDirs = dirs
+	}
+}
+
+func WithDebounce(d time.Duration) Option {
+	return func(rw *RecursiveWatcher) {
+		rw.debounce = d
 	}
 }
 
@@ -53,11 +64,14 @@ func NewRecursiveWatcher(root string, opts ...Option) (*RecursiveWatcher, error)
 		root:        root,
 		ignoredDirs: []string{},
 		w:           w,
-		events:      make(chan fsnotify.Event),
+		events:      make(chan Event),
 		errors:      make(chan error),
 
 		watchersMutex: &sync.RWMutex{},
 		watchers:      make(map[string]struct{}),
+
+		timersMutex: &sync.RWMutex{},
+		timers:      make(map[string]*time.Timer),
 	}
 
 	for _, opt := range opts {
@@ -70,7 +84,7 @@ func NewRecursiveWatcher(root string, opts ...Option) (*RecursiveWatcher, error)
 	return rw, nil
 }
 
-func (rw RecursiveWatcher) Events() <-chan fsnotify.Event {
+func (rw RecursiveWatcher) Events() <-chan Event {
 	return rw.events
 }
 
@@ -85,24 +99,51 @@ func (rw *RecursiveWatcher) Close() error {
 func (rw *RecursiveWatcher) eventLoop() {
 	for {
 		select {
-		case event := <-rw.w.Events:
+		case event, ok := <-rw.w.Events:
+			if !ok {
+				return
+			}
+
+			// Debounce events to dedupe writes
+			// It has the nice side effect of reducing the likelihood of receiving a write event after a remove event
+
+			// If there is a create event send it immediately
 			if event.Op.Has(fsnotify.Create) {
-				slog.Debug("received create event", "path", event.Name)
+				slog.Debug("handling create event", "path", event.Name)
 				rw.handleCreate(event)
+				continue
 			}
-			if event.Op.Has(fsnotify.Remove) {
-				slog.Debug("received remove event", "path", event.Name)
-				rw.handleRemove(event)
-			}
-			if event.Op.Has(fsnotify.Rename) {
-				slog.Debug("received rename event", "path", event.Name)
-				rw.handleRemove(event)
-			}
+
+			// If there is a write event, debounce it.
 			if event.Op.Has(fsnotify.Write) {
-				slog.Debug("received write event", "path", event.Name)
-				rw.events <- event
+				rw.timersMutex.Lock()
+				if timer, ok := rw.timers[event.Name]; ok {
+					timer.Stop()
+				}
+				rw.timers[event.Name] = time.AfterFunc(rw.debounce, func() {
+					slog.Debug("handling write event", "path", event.Name)
+					rw.events <- Event{Path: event.Name, Op: Change}
+				})
+				rw.timersMutex.Unlock()
 			}
-		case err := <-rw.w.Errors:
+
+			// If the event is a remove or rename event, tidy up the timer and handle the event
+			// Rename only tells us information about the old path, so we treat it like a remove event
+			if event.Op.Has(fsnotify.Remove) || event.Op.Has(fsnotify.Rename) {
+				rw.timersMutex.Lock()
+				timer, ok := rw.timers[event.Name]
+				if ok {
+					timer.Stop()
+					delete(rw.timers, event.Name)
+				}
+				rw.timersMutex.Unlock()
+				slog.Debug("handling remove event", "path", event.Name)
+				rw.handleRemove(event)
+			}
+		case err, ok := <-rw.w.Errors:
+			if !ok {
+				return
+			}
 			rw.errors <- err
 		}
 	}
@@ -174,7 +215,7 @@ func (rw *RecursiveWatcher) add(path string) {
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			slog.Debug("sending create event for file in new directory", "path", path+"/"+entry.Name())
-			rw.events <- fsnotify.Event{Name: path + "/" + entry.Name(), Op: fsnotify.Create}
+			rw.events <- Event{Path: path + "/" + entry.Name(), Op: Change}
 		}
 	}
 }
