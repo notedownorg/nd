@@ -20,11 +20,11 @@ import (
 	"github.com/google/uuid"
 )
 
-type kind string
+type Kind string
 
 type Node interface {
 	ID() string
-	Kind() kind
+	Kind() Kind
 	Parent() BranchNode
 	SetParent(BranchNode)
 	Markdown() string
@@ -39,15 +39,15 @@ type BranchNode interface {
 
 type node struct {
 	id     string
-	kind   kind
+	kind   Kind
 	parent BranchNode
 }
 
-const kindDelimiter = "|"
+const KindDelimiter = "|"
 
-func KindFromID(id string) kind {
-	split := strings.Split(id, kindDelimiter)
-	return kind(split[0])
+func KindFromID(id string) Kind {
+	split := strings.Split(id, KindDelimiter)
+	return Kind(split[0])
 }
 
 type nodeOption func(*node)
@@ -63,14 +63,14 @@ func nodeWithId(id string) nodeOption {
 	}
 }
 
-func idFromKind(kind kind, id string) string {
+func idFromKind(kind Kind, id string) string {
 	if strings.HasPrefix(id, string(kind)) {
 		return id
 	}
-	return string(kind) + kindDelimiter + id
+	return string(kind) + KindDelimiter + id
 }
 
-func newNode(kind kind, opts ...nodeOption) node {
+func newNode(kind Kind, opts ...nodeOption) node {
 	n := node{
 		id:   uuid.New().String(),
 		kind: kind,
@@ -85,7 +85,7 @@ func (n node) ID() string {
 	return n.id
 }
 
-func (n node) Kind() kind {
+func (n node) Kind() Kind {
 	return n.kind
 }
 

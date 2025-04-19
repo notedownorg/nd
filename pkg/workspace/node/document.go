@@ -28,7 +28,7 @@ type Document struct {
 	metadata
 }
 
-var DocumentKind kind = "Document"
+var DocumentKind Kind = "Document"
 
 func NewDocument(key string) *Document {
 	return &Document{

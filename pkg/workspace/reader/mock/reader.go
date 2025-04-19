@@ -16,6 +16,7 @@ package mock
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/notedownorg/nd/pkg/workspace/reader"
 )
@@ -23,6 +24,7 @@ import (
 var _ reader.Reader = &Reader{}
 
 type Reader struct {
+	clock    atomic.Int64
 	vfsMutex sync.RWMutex
 	vfs      map[string][]byte
 
@@ -30,12 +32,14 @@ type Reader struct {
 	errors      chan error
 }
 
-func NewReader() *Reader {
-	return &Reader{
+func NewReader(clockStart int64) *Reader {
+	reader := &Reader{
 		vfs:         make(map[string][]byte),
 		subscribers: make(map[int]chan reader.Event),
 		errors:      make(chan error),
 	}
+	reader.clock.Store(clockStart)
+	return reader
 }
 
 func (r *Reader) Subscribe(ch chan reader.Event, loadInitialDocuments bool) int {
@@ -44,12 +48,13 @@ func (r *Reader) Subscribe(ch chan reader.Event, loadInitialDocuments bool) int 
 
 	if loadInitialDocuments {
 		go func(s chan reader.Event) {
+			var localClock atomic.Int64
 			r.vfsMutex.RLock()
 			for key, content := range r.vfs {
-				ch <- reader.Event{Op: reader.Load, Id: key, Content: content}
+				ch <- reader.Event{Op: reader.Load, Id: key, Content: content, Clock: localClock.Add(1)}
 			}
 			r.vfsMutex.RUnlock()
-			ch <- reader.Event{Op: reader.SubscriberLoadComplete}
+			ch <- reader.Event{Op: reader.SubscriberLoadComplete, Clock: r.clock.Load()}
 		}(ch)
 	}
 

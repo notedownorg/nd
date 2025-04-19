@@ -34,22 +34,30 @@ import (
 func TestWorkspace_Reader(t *testing.T) {
 	data := loadFilesToBytes(t, "testdata")
 
-	reader := mock.NewReader()
+	reader := mock.NewReader(0)
 	ws, err := NewWorkspace("test", reader)
 	defer ws.Close()
 	assert.NoError(t, err)
 
+	keys := make([]string, 0, len(data))
+	for key := range data {
+		keys = append(keys, key)
+	}
+
+	clock := int64(0)
 	for range 10000 {
-		content := data[rand.IntN(len(data))]
+		clock += 1
+		content := data[keys[rand.IntN(len(keys))]]
 		switch rand.IntN(4) {
 		case 0:
-			reader.Add(words.Random()+".md", content)
+			reader.Add(words.Random()+".md", content, clock)
 		case 1:
-			reader.Update(reader.RandomFile(), content)
+			reader.Update(reader.RandomFile(), content, clock)
 		case 2:
-			reader.Remove(reader.RandomFile())
+			reader.Remove(reader.RandomFile(), clock)
 		case 3:
-			reader.Rename(reader.RandomFile(), words.Random()+".md")
+			reader.Rename(reader.RandomFile(), words.Random()+".md", clock, clock+1)
+			clock += 1 // rename is two events (delete and create)
 		}
 	}
 
@@ -58,7 +66,7 @@ func TestWorkspace_Reader(t *testing.T) {
 	for _, key := range reader.ListFiles() {
 		want[DocumentId(key)] = string(reader.GetContent(key))
 	}
-	for _, doc := range ws.documents {
+	for _, doc := range ws.documents.Values() {
 		got[doc.ID()] = doc.Markdown()
 	}
 
@@ -119,7 +127,7 @@ func TestWorkspace_LoadDocument(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ws := Workspace{documents: make(map[string]*Document)}
+			ws, err := NewWorkspace("test", mock.NewReader(0))
 
 			content, err := os.ReadFile(filepath.Join("testdata", tt.filename))
 			require.NoError(t, err)
@@ -129,7 +137,7 @@ func TestWorkspace_LoadDocument(t *testing.T) {
 			// Since we don't have access to the document ID directly,
 			// we'll get the first (and only) document from the workspace
 			var doc *Document
-			for _, d := range ws.documents {
+			for _, d := range ws.documents.Values() {
 				doc = d
 				break
 			}

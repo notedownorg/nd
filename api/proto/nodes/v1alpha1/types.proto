@@ -19,6 +19,13 @@ import "google/protobuf/any.proto";
 
 option go_package = "github.com/notedownorg/nd/api/v1alpha1;v1alpha1";
 
+message Node {
+    oneof node {
+        Document document = 1;
+        Section section = 2;
+    }
+}
+
 message Document {
     string id = 1;  
     string workspace = 2;

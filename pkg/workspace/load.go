@@ -17,7 +17,6 @@ package workspace
 import (
 	"bytes"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	utils "github.com/notedownorg/nd/pkg/goldmark"
@@ -38,18 +37,21 @@ func (w *Workspace) processDocuments(subscription <-chan reader.Event) {
 		// We take this approach because it's simpler to delete nodes than to try and work out what has changed
 		// We may need to revisit this if we want to support undo/redo or hit performance issues in the future.
 		deletionList, documentId := make(map[string]struct{}), DocumentId(event.Id)
-		if doc, ok := w.documents[documentId]; ok {
+		if doc, ok := w.documents.Get(documentId); ok {
 			doc.DepthFirstSearch(func(n Node) { deletionList[n.ID()] = struct{}{} })
 		}
 
 		switch event.Op {
 		case reader.Load:
 		case reader.Change:
-			w.log.Debug("updating document", "id", documentId, "location", event.Id)
 			w.loadDocument(event.Id, event.Content)
+			w.log.Debug("updated document from event", "id", documentId, "event_id", event.Id)
 		case reader.Delete:
-			w.log.Debug("deleting document", "id", documentId, "location", event.Id)
-			w.deleteNode(documentId)
+			// deletes may wait for the document to be loaded so we need to run this async to avoid deadlock
+			go func() {
+				w.deleteNode(documentId)
+				w.log.Debug("deleted document from event", "id", documentId, "event_id", event.Id)
+			}()
 		}
 
 		// Delete the children of the original (or deleted) document that are still accessible from the workspace struct
@@ -76,7 +78,7 @@ func (w *Workspace) loadDocument(id string, content []byte) {
 				if len(node.Yaml) != 0 {
 					var root yaml.Node
 					if err := yaml.Unmarshal(node.Yaml, &root); err != nil {
-						slog.Error("failed to unmarshal yaml", "error", err)
+						w.log.Error("failed to unmarshal yaml", "error", err)
 					}
 					doc.SetMetadata(&root)
 				}
@@ -127,7 +129,7 @@ func (w *Workspace) loadDocument(id string, content []byte) {
 	// Add the trailing content
 	doc.AddChild(NewPlaceholder(content[curr:]))
 
-	w.documents[doc.ID()] = doc
+	w.documents.Add(doc) // cache the document
 }
 
 func Debug() func(node ast.Node, entering bool) (ast.WalkStatus, error) {

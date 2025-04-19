@@ -15,12 +15,16 @@
 package filesystem
 
 import (
+	"sync/atomic"
+
 	"github.com/notedownorg/nd/pkg/workspace/reader"
 )
 
 func (r *Reader) Subscribe(ch chan reader.Event, loadInitialDocuments bool) int {
-	r.subscribers[len(r.subscribers)] = ch
-	index := len(r.subscribers) - 1
+	// Add to subscribe map first to ensure we don't miss any events
+	// Multiple reporting of an event is better than missing one
+	index := len(r.subscribers)
+	r.subscribers[index] = ch
 
 	if loadInitialDocuments {
 		go func(s chan reader.Event) {
@@ -31,14 +35,16 @@ func (r *Reader) Subscribe(ch chan reader.Event, loadInitialDocuments bool) int 
 					r.log.Warn("subscriber closed before initial documents could be loaded")
 				}
 			}()
+
+			var local atomic.Int64
 			for key := range r.documents {
 				_, content := r.loadDocument(key)
 				if content == nil {
 					continue
 				}
-				s <- reader.Event{Op: reader.Load, Id: key, Content: content}
+				s <- reader.Event{Op: reader.Load, Id: key, Content: content, Clock: local.Add(1)}
 			}
-			s <- reader.Event{Op: reader.SubscriberLoadComplete}
+			s <- reader.Event{Op: reader.SubscriberLoadComplete, Clock: r.clock.Load()}
 		}(ch)
 	}
 
@@ -46,7 +52,11 @@ func (r *Reader) Subscribe(ch chan reader.Event, loadInitialDocuments bool) int 
 }
 
 func (r *Reader) Unsubscribe(index int) {
-	delete(r.subscribers, index)
+	ch, ok := r.subscribers[index]
+	if ok {
+		delete(r.subscribers, index)
+		close(ch)
+	}
 }
 
 func (r *Reader) eventDispatcher() {

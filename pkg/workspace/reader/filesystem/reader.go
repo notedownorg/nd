@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/notedownorg/nd/pkg/fsnotify"
@@ -34,8 +35,9 @@ var _ reader.Reader = &Reader{}
 // to the graph are detected (i.e. a file is added, removed or modified)
 // It is not responsible for parsing the documents, maintaining the graph or handling mutations to the graph/files.
 type Reader struct {
-	log  *slog.Logger
-	root string
+	log   *slog.Logger
+	root  string
+	clock atomic.Int64
 
 	// Map of relative location (id) to document
 	documents map[string]document
@@ -108,8 +110,8 @@ func NewReader(name string, location string) (*Reader, error) {
 			}
 		}
 		if strings.HasSuffix(path, ".md") {
-			wg.Add(1) // Increment the wait group for each file we process
-			client.processFile(path, true)
+			wg.Add(1)                         // Increment the wait group for each file we process
+			client.processFile(path, true, 0) // we dont return until after these have been processed so we can safely use 0 for the clock
 		}
 		return nil
 	})
@@ -118,7 +120,6 @@ func NewReader(name string, location string) (*Reader, error) {
 	client.log.Debug("waiting for initial load to complete")
 	wg.Wait()
 	client.Unsubscribe(subscriberIndex)
-	close(sub)
 
 	return client, nil
 }

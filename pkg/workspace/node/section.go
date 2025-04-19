@@ -26,7 +26,7 @@ type Section struct {
 	level int
 }
 
-var sectionKind kind = "Section"
+var sectionKind Kind = "Section"
 
 func NewSection(level int, title string) *Section {
 	return &Section{

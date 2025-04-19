@@ -20,35 +20,35 @@ import (
 	"github.com/notedownorg/nd/pkg/workspace/reader"
 )
 
-func (r *Reader) Add(path string, content []byte) {
+func (r *Reader) Add(path string, content []byte, clock int64) {
 	r.vfsMutex.Lock()
 	r.vfs[path] = content
 	r.vfsMutex.Unlock()
-	r.sendEvent(reader.Event{Op: reader.Change, Id: path, Content: content})
+	r.sendEvent(reader.Event{Op: reader.Change, Id: path, Content: content, Clock: clock})
 }
 
-func (r *Reader) Update(path string, content []byte) {
+func (r *Reader) Update(path string, content []byte, clock int64) {
 	r.vfsMutex.Lock()
 	r.vfs[path] = content
 	r.vfsMutex.Unlock()
-	r.sendEvent(reader.Event{Op: reader.Change, Id: path, Content: content})
+	r.sendEvent(reader.Event{Op: reader.Change, Id: path, Content: content, Clock: clock})
 }
 
-func (r *Reader) Rename(oldPath, newPath string) {
+func (r *Reader) Rename(oldPath, newPath string, changeClock, delClock int64) {
 	r.vfsMutex.Lock()
 	content := r.vfs[oldPath]
 	r.vfs[newPath] = content
 	delete(r.vfs, oldPath)
 	r.vfsMutex.Unlock()
-	r.sendEvent(reader.Event{Op: reader.Delete, Id: oldPath})
-	r.sendEvent(reader.Event{Op: reader.Change, Id: newPath, Content: content})
+	r.sendEvent(reader.Event{Op: reader.Delete, Id: oldPath, Clock: delClock})
+	r.sendEvent(reader.Event{Op: reader.Change, Id: newPath, Content: content, Clock: changeClock})
 }
 
-func (r *Reader) Remove(path string) {
+func (r *Reader) Remove(path string, clock int64) {
 	r.vfsMutex.Lock()
 	delete(r.vfs, path)
 	r.vfsMutex.Unlock()
-	r.sendEvent(reader.Event{Op: reader.Delete, Id: path})
+	r.sendEvent(reader.Event{Op: reader.Delete, Id: path, Clock: clock})
 }
 
 func (r *Reader) ListFiles() []string {

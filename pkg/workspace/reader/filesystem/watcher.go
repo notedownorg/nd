@@ -16,7 +16,6 @@ package filesystem
 
 import (
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/notedownorg/nd/pkg/fsnotify"
@@ -26,16 +25,17 @@ import (
 func (r *Reader) fileWatcher() {
 	defer r.watcher.Close()
 	for {
+		clock := r.clock.Add(1)
 		select {
 		case event := <-r.watcher.Events():
 			switch event.Op {
 			case fsnotify.Change:
-				r.handleChangeEvent(event)
+				r.handleChangeEvent(event, clock)
 			case fsnotify.Remove:
-				r.handleRemoveEvent(event)
+				r.handleRemoveEvent(event, clock)
 			}
 		case err := <-r.watcher.Errors():
-			log.Printf("error: %s", err)
+			r.log.Warn("received error from filewatcher", "error", err)
 		}
 	}
 }
@@ -48,18 +48,18 @@ func isDir(path string) bool {
 	return fi.IsDir()
 }
 
-func (r *Reader) handleChangeEvent(event fsnotify.Event) {
+func (r *Reader) handleChangeEvent(event fsnotify.Event, clock uint64) {
 	if isDir(event.Path) {
 		r.log.Debug("ignoring directory change event", "dir", event.Path)
 		return
 	}
 	r.log.Debug("handling file change event", "file", event.Path)
-	r.processFile(event.Path, false)
+	r.processFile(event.Path, false, clock)
 }
 
-func (r *Reader) handleRemoveEvent(event fsnotify.Event) {
-	if isDir(event.Path) {
-		r.log.Debug("ignoring directory remove event", "dir", event.Path)
+func (r *Reader) handleRemoveEvent(event fsnotify.Event, clock int64) {
+	if isDir(event.Name) {
+		r.log.Debug("ignoring directory remove event", "dir", event.Name)
 		return
 	}
 	r.log.Debug("handling file remove event", "file", event.Path)
@@ -72,5 +72,5 @@ func (r *Reader) handleRemoveEvent(event fsnotify.Event) {
 	r.docMutex.Lock()
 	defer r.docMutex.Unlock()
 	delete(r.documents, rel)
-	r.events <- reader.Event{Op: reader.Delete, Id: rel}
+	r.events <- reader.Event{Op: reader.Delete, Id: rel, Clock: clock}
 }
