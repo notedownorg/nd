@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/notedownorg/nd/pkg/fsnotify"
+	ev "github.com/notedownorg/nd/pkg/fsnotify"
 	"github.com/notedownorg/nd/pkg/workspace/reader"
 )
 
@@ -29,9 +29,9 @@ func (r *Reader) fileWatcher() {
 		select {
 		case event := <-r.watcher.Events():
 			switch event.Op {
-			case fsnotify.Change:
+			case ev.Change:
 				r.handleChangeEvent(event, clock)
-			case fsnotify.Remove:
+			case ev.Remove:
 				r.handleRemoveEvent(event, clock)
 			}
 		case err := <-r.watcher.Errors():
@@ -48,7 +48,7 @@ func isDir(path string) bool {
 	return fi.IsDir()
 }
 
-func (r *Reader) handleChangeEvent(event fsnotify.Event, clock uint64) {
+func (r *Reader) handleChangeEvent(event ev.Event, clock uint64) {
 	if isDir(event.Path) {
 		r.log.Debug("ignoring directory change event", "dir", event.Path)
 		return
@@ -57,15 +57,15 @@ func (r *Reader) handleChangeEvent(event fsnotify.Event, clock uint64) {
 	r.processFile(event.Path, false, clock)
 }
 
-func (r *Reader) handleRemoveEvent(ev fsnotify.Event, clock uint64) {
-	if isDir(ev.Name) {
-		r.log.Debug("ignoring directory remove event", "dir", ev.Name)
+func (r *Reader) handleRemoveEvent(ev ev.Event, clock uint64) {
+	if isDir(ev.Path) {
+		r.log.Debug("ignoring directory remove event", "dir", ev.Path)
 		return
 	}
-	r.log.Debug("handling file remove event", "file", event.Path)
-	rel, err := r.relative(event.Path)
+	r.log.Debug("handling file remove event", "file", ev.Path)
+	rel, err := r.relative(ev.Path)
 	if err != nil {
-		r.log.Error("failed to get relative path", "file", event.Path, "error", err)
+		r.log.Error("failed to get relative path", "file", ev.Path, "error", err)
 		r.errors <- fmt.Errorf("failed to get relative path: %w", err)
 		return
 	}

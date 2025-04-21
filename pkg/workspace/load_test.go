@@ -140,7 +140,7 @@ func TestWorkspace_LoadDocument(t *testing.T) {
 			}
 
 			// Its enough to check that the round trip works
-			assert.NotNil(t, doc)
+			require.NotNil(t, doc)
 			assert.Equal(t, string(content), doc.Markdown())
 		})
 	}

@@ -44,8 +44,7 @@ func (w *Workspace) processDocuments(subscription <-chan reader.Event) {
 		switch event.Op {
 		case reader.Load:
 		case reader.Change:
-			doc := w.loadDocument(event.Id, event.Content)
-			w.documents.Add(doc)
+			w.loadDocument(event.Id, event.Content)
 			w.log.Debug("updated document from event", "id", documentId, "event_id", event.Id)
 		case reader.Delete:
 			w.deleteNode(documentId)
@@ -59,7 +58,7 @@ func (w *Workspace) processDocuments(subscription <-chan reader.Event) {
 	}
 }
 
-func (w *Workspace) loadDocument(id string, content []byte) *Document {
+func (w *Workspace) loadDocument(id string, content []byte) {
 	doc := NewDocument(id)
 
 	// Walk the ast building our graph
@@ -126,7 +125,7 @@ func (w *Workspace) loadDocument(id string, content []byte) *Document {
 
 	// Add the trailing content
 	doc.AddChild(NewPlaceholder(content[curr:]))
-	return doc
+	w.documents.Add(doc)
 }
 
 func Debug() func(node ast.Node, entering bool) (ast.WalkStatus, error) {
