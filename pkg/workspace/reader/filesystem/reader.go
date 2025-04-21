@@ -45,7 +45,8 @@ type Reader struct {
 
 	watcher *fsnotify.RecursiveWatcher
 
-	subscribers map[int]chan reader.Event
+	subscriberMutex sync.RWMutex
+	subscribers     map[int]chan reader.Event
 
 	// Everytime a goroutine makes a blocking syscall (in our case usually file i/o) it uses a new thread so to avoid
 	// large workspaces exhausting the thread limit we use a semaphore to limit the number of concurrent goroutines

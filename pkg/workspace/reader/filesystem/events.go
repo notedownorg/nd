@@ -27,8 +27,10 @@ type event struct {
 func (r *Reader) Subscribe(ch chan reader.Event, loadInitialDocuments bool) int {
 	// Add to subscribe map first to ensure we don't miss any events
 	// Multiple reporting of an event is better than missing one
+	r.subscriberMutex.Lock()
 	index := len(r.subscribers)
 	r.subscribers[index] = ch
+	r.subscriberMutex.Unlock()
 
 	if loadInitialDocuments {
 		go func(s chan reader.Event) {
@@ -55,6 +57,8 @@ func (r *Reader) Subscribe(ch chan reader.Event, loadInitialDocuments bool) int 
 }
 
 func (r *Reader) Unsubscribe(index int) {
+	r.subscriberMutex.Lock()
+	defer r.subscriberMutex.Unlock()
 	ch, ok := r.subscribers[index]
 	if ok {
 		delete(r.subscribers, index)
@@ -65,6 +69,7 @@ func (r *Reader) Unsubscribe(index int) {
 func (r *Reader) eventDispatcher() {
 	// Somewhere here? We need to track the order in which we received the events from fsnotify
 	for ev := range r.events {
+		r.subscriberMutex.RLock()
 		for _, subscriber := range r.subscribers {
 			go func(s chan reader.Event, e event) {
 				// Recover from a panic if the subscriber has been closed
@@ -77,5 +82,6 @@ func (r *Reader) eventDispatcher() {
 				s <- ev.Event
 			}(subscriber, ev)
 		}
+		r.subscriberMutex.RUnlock()
 	}
 }
