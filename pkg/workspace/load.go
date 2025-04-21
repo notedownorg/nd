@@ -34,7 +34,7 @@ var md = goldmark.New(goldmark.WithExtensions(frontmatter.Extension))
 func (w *Workspace) processDocuments(subscription <-chan reader.Event) {
 	for event := range subscription {
 		// Traverse from the document in question to find the list of ids that currently exist in the graph
-		// We take this approach because it's simpler to delete nodes than to try and work out what has changed
+		// We take this approach because it's simpler to delete nodes than to try and work out the diff.
 		// We may need to revisit this if we want to support undo/redo or hit performance issues in the future.
 		deletionList, documentId := make(map[string]struct{}), DocumentId(event.Id)
 		if doc, ok := w.documents.Get(documentId); ok {
@@ -44,14 +44,12 @@ func (w *Workspace) processDocuments(subscription <-chan reader.Event) {
 		switch event.Op {
 		case reader.Load:
 		case reader.Change:
-			w.loadDocument(event.Id, event.Content)
+			doc := w.loadDocument(event.Id, event.Content)
+			w.documents.Add(doc)
 			w.log.Debug("updated document from event", "id", documentId, "event_id", event.Id)
 		case reader.Delete:
-			// deletes may wait for the document to be loaded so we need to run this async to avoid deadlock
-			go func() {
-				w.deleteNode(documentId)
-				w.log.Debug("deleted document from event", "id", documentId, "event_id", event.Id)
-			}()
+			w.deleteNode(documentId)
+			w.log.Debug("deleted document from event", "id", documentId, "event_id", event.Id)
 		}
 
 		// Delete the children of the original (or deleted) document that are still accessible from the workspace struct
@@ -61,7 +59,7 @@ func (w *Workspace) processDocuments(subscription <-chan reader.Event) {
 	}
 }
 
-func (w *Workspace) loadDocument(id string, content []byte) {
+func (w *Workspace) loadDocument(id string, content []byte) *Document {
 	doc := NewDocument(id)
 
 	// Walk the ast building our graph
@@ -128,8 +126,7 @@ func (w *Workspace) loadDocument(id string, content []byte) {
 
 	// Add the trailing content
 	doc.AddChild(NewPlaceholder(content[curr:]))
-
-	w.documents.Add(doc) // cache the document
+	return doc
 }
 
 func Debug() func(node ast.Node, entering bool) (ast.WalkStatus, error) {

@@ -37,7 +37,7 @@ var _ reader.Reader = &Reader{}
 type Reader struct {
 	log   *slog.Logger
 	root  string
-	clock atomic.Int64
+	clock atomic.Uint64
 
 	// Map of relative location (id) to document
 	documents map[string]document
@@ -52,7 +52,7 @@ type Reader struct {
 	threadLimit *semaphore.Weighted
 
 	errors chan error
-	events chan reader.Event
+	events chan event
 }
 
 func NewReader(name string, location string) (*Reader, error) {
@@ -74,7 +74,7 @@ func NewReader(name string, location string) (*Reader, error) {
 		subscribers: make(map[int]chan reader.Event),
 		threadLimit: semaphore.NewWeighted(1000), // Avoid exhausting golang max threads
 		errors:      make(chan error),
-		events:      make(chan reader.Event),
+		events:      make(chan event),
 	}
 
 	// Create a subscription so we can listen for the initial load events
@@ -111,7 +111,7 @@ func NewReader(name string, location string) (*Reader, error) {
 		}
 		if strings.HasSuffix(path, ".md") {
 			wg.Add(1)                         // Increment the wait group for each file we process
-			client.processFile(path, true, 0) // we dont return until after these have been processed so we can safely use 0 for the clock
+			client.processFile(path, true, 0) // ignore clock for initial load
 		}
 		return nil
 	})

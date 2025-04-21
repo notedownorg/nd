@@ -1,3 +1,0 @@
-=== RUN   TestWithExpiry
-signal: interrupt
-FAIL	github.com/notedownorg/nd/pkg/reorderbuffer	0.948s

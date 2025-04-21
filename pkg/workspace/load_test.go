@@ -34,7 +34,7 @@ import (
 func TestWorkspace_Reader(t *testing.T) {
 	data := loadFilesToBytes(t, "testdata")
 
-	reader := mock.NewReader(0)
+	reader := mock.NewReader(t)
 	ws, err := NewWorkspace("test", reader)
 	defer ws.Close()
 	assert.NoError(t, err)
@@ -44,20 +44,17 @@ func TestWorkspace_Reader(t *testing.T) {
 		keys = append(keys, key)
 	}
 
-	clock := int64(0)
 	for range 10000 {
-		clock += 1
 		content := data[keys[rand.IntN(len(keys))]]
 		switch rand.IntN(4) {
 		case 0:
-			reader.Add(words.Random()+".md", content, clock)
+			reader.Add(words.Random()+".md", content)
 		case 1:
-			reader.Update(reader.RandomFile(), content, clock)
+			reader.Update(reader.RandomFile(), content)
 		case 2:
-			reader.Remove(reader.RandomFile(), clock)
+			reader.Remove(reader.RandomFile())
 		case 3:
-			reader.Rename(reader.RandomFile(), words.Random()+".md", clock, clock+1)
-			clock += 1 // rename is two events (delete and create)
+			reader.Rename(reader.RandomFile(), words.Random()+".md")
 		}
 	}
 
@@ -127,7 +124,7 @@ func TestWorkspace_LoadDocument(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ws, err := NewWorkspace("test", mock.NewReader(0))
+			ws, err := NewWorkspace("test", mock.NewReader(t))
 
 			content, err := os.ReadFile(filepath.Join("testdata", tt.filename))
 			require.NoError(t, err)

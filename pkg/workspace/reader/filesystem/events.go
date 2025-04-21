@@ -15,10 +15,14 @@
 package filesystem
 
 import (
-	"sync/atomic"
-
 	"github.com/notedownorg/nd/pkg/workspace/reader"
 )
+
+// Internal event type to encapsulate the clock ordering functionality
+type event struct {
+	reader.Event
+	clock uint64
+}
 
 func (r *Reader) Subscribe(ch chan reader.Event, loadInitialDocuments bool) int {
 	// Add to subscribe map first to ensure we don't miss any events
@@ -36,15 +40,14 @@ func (r *Reader) Subscribe(ch chan reader.Event, loadInitialDocuments bool) int 
 				}
 			}()
 
-			var local atomic.Int64
 			for key := range r.documents {
 				_, content := r.loadDocument(key)
 				if content == nil {
 					continue
 				}
-				s <- reader.Event{Op: reader.Load, Id: key, Content: content, Clock: local.Add(1)}
+				s <- reader.Event{Op: reader.Load, Id: key, Content: content}
 			}
-			s <- reader.Event{Op: reader.SubscriberLoadComplete, Clock: r.clock.Load()}
+			s <- reader.Event{Op: reader.SubscriberLoadComplete}
 		}(ch)
 	}
 
@@ -60,9 +63,10 @@ func (r *Reader) Unsubscribe(index int) {
 }
 
 func (r *Reader) eventDispatcher() {
-	for event := range r.events {
+	// Somewhere here? We need to track the order in which we received the events from fsnotify
+	for ev := range r.events {
 		for _, subscriber := range r.subscribers {
-			go func(s chan reader.Event, e reader.Event) {
+			go func(s chan reader.Event, e event) {
 				// Recover from a panic if the subscriber has been closed
 				// Likely this will only happen in tests but its theoretically possible in regular usage
 				defer func() {
@@ -70,8 +74,8 @@ func (r *Reader) eventDispatcher() {
 						r.log.Warn("dropping event as subscriber has been closed", "path", e.Id)
 					}
 				}()
-				s <- e
-			}(subscriber, event)
+				s <- ev.Event
+			}(subscriber, ev)
 		}
 	}
 }

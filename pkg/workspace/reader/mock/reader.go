@@ -16,7 +16,7 @@ package mock
 
 import (
 	"sync"
-	"sync/atomic"
+	"testing"
 
 	"github.com/notedownorg/nd/pkg/workspace/reader"
 )
@@ -24,21 +24,21 @@ import (
 var _ reader.Reader = &Reader{}
 
 type Reader struct {
-	clock    atomic.Int64
 	vfsMutex sync.RWMutex
 	vfs      map[string][]byte
 
 	subscribers map[int]chan reader.Event
 	errors      chan error
+	t           *testing.T
 }
 
-func NewReader(clockStart int64) *Reader {
+func NewReader(t *testing.T) *Reader {
 	reader := &Reader{
 		vfs:         make(map[string][]byte),
 		subscribers: make(map[int]chan reader.Event),
 		errors:      make(chan error),
+        t:          t,
 	}
-	reader.clock.Store(clockStart)
 	return reader
 }
 
@@ -48,13 +48,12 @@ func (r *Reader) Subscribe(ch chan reader.Event, loadInitialDocuments bool) int 
 
 	if loadInitialDocuments {
 		go func(s chan reader.Event) {
-			var localClock atomic.Int64
 			r.vfsMutex.RLock()
 			for key, content := range r.vfs {
-				ch <- reader.Event{Op: reader.Load, Id: key, Content: content, Clock: localClock.Add(1)}
+				ch <- reader.Event{Op: reader.Load, Id: key, Content: content}
 			}
 			r.vfsMutex.RUnlock()
-			ch <- reader.Event{Op: reader.SubscriberLoadComplete, Clock: r.clock.Load()}
+			ch <- reader.Event{Op: reader.SubscriberLoadComplete}
 		}(ch)
 	}
 
@@ -70,6 +69,7 @@ func (r *Reader) Errors() <-chan error {
 }
 
 func (r *Reader) sendEvent(event reader.Event) {
+	r.t.Logf("sending event: op: %v, id: %v\n", event.Op, event.Id)
 	for _, ch := range r.subscribers {
 		ch <- event
 	}

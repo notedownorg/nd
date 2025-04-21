@@ -57,9 +57,9 @@ func (r *Reader) handleChangeEvent(event fsnotify.Event, clock uint64) {
 	r.processFile(event.Path, false, clock)
 }
 
-func (r *Reader) handleRemoveEvent(event fsnotify.Event, clock int64) {
-	if isDir(event.Name) {
-		r.log.Debug("ignoring directory remove event", "dir", event.Name)
+func (r *Reader) handleRemoveEvent(ev fsnotify.Event, clock uint64) {
+	if isDir(ev.Name) {
+		r.log.Debug("ignoring directory remove event", "dir", ev.Name)
 		return
 	}
 	r.log.Debug("handling file remove event", "file", event.Path)
@@ -72,5 +72,5 @@ func (r *Reader) handleRemoveEvent(event fsnotify.Event, clock int64) {
 	r.docMutex.Lock()
 	defer r.docMutex.Unlock()
 	delete(r.documents, rel)
-	r.events <- reader.Event{Op: reader.Delete, Id: rel, Clock: clock}
+	r.events <- event{Event: reader.Event{Op: reader.Delete, Id: rel}, clock: clock}
 }

@@ -23,7 +23,7 @@ import (
 	"github.com/notedownorg/nd/pkg/workspace/reader"
 )
 
-func (r *Reader) processFile(path string, load bool, clock int64) {
+func (r *Reader) processFile(path string, load bool, clock uint64) {
 	// If we have already processed this file and it is up to date, we can skip it
 	if !load && r.isUpToDate(path) {
 		r.log.Debug("file is up to date, stopping short", "file", path)
@@ -47,7 +47,7 @@ func (r *Reader) processFile(path string, load bool, clock int64) {
 				return reader.Change
 			}
 		}()
-		r.events <- reader.Event{Op: op, Id: rel, Content: content, Clock: clock}
+		r.events <- event{Event: reader.Event{Op: op, Id: rel, Content: content}, clock: clock}
 	}()
 }
 

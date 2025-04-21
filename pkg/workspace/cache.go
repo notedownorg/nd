@@ -7,7 +7,7 @@ import (
 	"maps"
 )
 
-// Caches automatically handles locking and emitting change events
+// Caches automatically handles locking and emitting change events in the correct order
 type Cache[T Node] struct {
 	ch    chan Event
 	mu    sync.RWMutex
@@ -57,7 +57,7 @@ func (c *Cache[T]) Add(node T) {
 	c.mu.Lock()
 	c.nodes[node.ID()] = node
 	c.mu.Unlock()
-	c.ch <- Event{Op: Load, Id: node.ID(), Node: node}
+	c.ch <- Event{Op: Change, Id: node.ID(), Node: node}
 }
 
 func (c *Cache[T]) Remove(id string) {

@@ -16,7 +16,7 @@ import (
 func TestWorkspace_Events_SubscribeWithIntialDocuments_Sync(t *testing.T) {
 	data := loadFilesToBytes(t, "testdata")
 
-	reader := mock.NewReader(0)
+	reader := mock.NewReader(t)
 	ws, err := NewWorkspace("test", reader)
 	defer ws.Close()
 	assert.NoError(t, err)
@@ -24,7 +24,7 @@ func TestWorkspace_Events_SubscribeWithIntialDocuments_Sync(t *testing.T) {
 	clock := int64(0)
 	for key, content := range data {
 		clock += 1
-		reader.Add(key, content, clock)
+		reader.Add(key, content)
 	}
 
 	// Create a subscriber and ensure it receives the load complete event
@@ -59,7 +59,7 @@ func TestWorkspace_Events_SubscribeWithIntialDocuments_Sync(t *testing.T) {
 func TestWorkspace_Events_Fuzz(t *testing.T) {
 	data := loadFilesToBytes(t, "testdata")
 
-	reader := mock.NewReader(0)
+	reader := mock.NewReader(t)
 	ws, err := NewWorkspace("test", reader)
 	defer ws.Close()
 	assert.NoError(t, err)
@@ -76,23 +76,22 @@ func TestWorkspace_Events_Fuzz(t *testing.T) {
 	go func() {
 		for ev := range sub {
 			id := strings.Split(ev.Id, node.KindDelimiter)[1]
-			if ev.Op == Delete {
-				t.Logf("delete %s", ev.Id)
-				mut.Lock()
-				delete(got, id)
-				mut.Unlock()
-			}
 			if ev.Op == Load || ev.Op == Change {
-				t.Logf("load/change %s", ev.Id)
+				t.Logf("received load/change %s (%d)", ev.Id, ev.Op)
 				mut.Lock()
 				got[id] = struct{}{}
+				mut.Unlock()
+			}
+			if ev.Op == Delete {
+				t.Logf("received delete %s (%d)", ev.Id, ev.Op)
+				mut.Lock()
+				delete(got, id)
 				mut.Unlock()
 			}
 		}
 	}()
 
 	want := make(map[string]struct{})
-	clock := int64(0)
 	for range 30 {
 		// Default to add only, open other operations if we have more than 1 files
 		operations := 1
@@ -101,26 +100,28 @@ func TestWorkspace_Events_Fuzz(t *testing.T) {
 		}
 		content := data[keys[rand.Intn(len(keys))]]
 		newFile, existingFile := words.Random()+".md", reader.RandomFile()
-		clock += 1
 
 		switch rand.Intn(operations) {
 		case 0:
-			reader.Add(newFile, content, clock)
+			t.Logf("add %s", newFile)
+			reader.Add(newFile, content)
 			want[newFile] = struct{}{}
 		case 1:
-			reader.Update(existingFile, content, clock)
+			t.Logf("update %s", existingFile)
+			reader.Update(existingFile, content)
 		case 2:
-			reader.Remove(existingFile, clock)
+			t.Logf("remove %s", existingFile)
+			reader.Remove(existingFile)
 			delete(want, existingFile)
 		case 3:
-			reader.Rename(existingFile, newFile, clock, clock+1)
-			clock += 1 // rename is two events (delete and create)
+			t.Logf("rename %s to %s", existingFile, newFile)
+			reader.Rename(existingFile, newFile)
 			delete(want, existingFile)
 			want[newFile] = struct{}{}
 		}
 	}
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	assert.Equal(t, want, got)
 }
