@@ -67,7 +67,7 @@ func TestWorkspace_Events_SubscribeWithIntialDocuments_Sync(t *testing.T) {
 	for _, doc := range reader.ListFiles() {
 		want[doc] = struct{}{}
 	}
-	assert.Equal(t, got, want)
+	assert.Equal(t, want, got)
 }
 
 func TestWorkspace_Events_Fuzz(t *testing.T) {
