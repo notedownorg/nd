@@ -19,9 +19,9 @@ import "math/rand"
 //go:generate go run generate/main.go
 
 func Random() string {
-    res := dict[rand.Intn(len(dict))]
-    for len(res) == 0 {
-        res = dict[rand.Intn(len(dict))]
-    }
+	res := dict[rand.Intn(len(dict))]
+	for len(res) == 0 {
+		res = dict[rand.Intn(len(dict))]
+	}
 	return res
 }

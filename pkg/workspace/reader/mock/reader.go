@@ -37,7 +37,7 @@ func NewReader(t *testing.T) *Reader {
 		vfs:         make(map[string][]byte),
 		subscribers: make(map[int]chan reader.Event),
 		errors:      make(chan error),
-        t:          t,
+		t:           t,
 	}
 	return reader
 }
