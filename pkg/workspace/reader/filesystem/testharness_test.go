@@ -48,16 +48,16 @@ type testHarness struct {
 
 // Test constants that can be shared across all test files
 const (
-	DefaultEventBufferSize     = 10
-	LargeEventBufferSize       = 2000
-	ExtremeEventBufferSize     = 5000
-	DefaultTimeout             = time.Second
-	FileWriteDelay             = 100 * time.Millisecond
-	ChangeEventTimeout         = 2 * time.Second
-	NonMarkdownTimeout         = 500 * time.Millisecond
-	EventPropagationDelay      = 500 * time.Millisecond
-	ConsistencyCheckInterval   = 200 * time.Millisecond
-	DefaultOperationDuration   = 3 * time.Second
+	DefaultEventBufferSize   = 10
+	LargeEventBufferSize     = 2000
+	ExtremeEventBufferSize   = 5000
+	DefaultTimeout           = time.Second
+	FileWriteDelay           = 100 * time.Millisecond
+	ChangeEventTimeout       = 2 * time.Second
+	NonMarkdownTimeout       = 500 * time.Millisecond
+	EventPropagationDelay    = 500 * time.Millisecond
+	ConsistencyCheckInterval = 200 * time.Millisecond
+	DefaultOperationDuration = 3 * time.Second
 )
 
 // newTestHarness creates a new test environment with the specified number of subscribers.
@@ -105,10 +105,10 @@ func newTestHarness(t *testing.T, numSubscribers int, loadInitial bool) *testHar
 // newSingleSubscriberHarness creates a test harness optimized for single subscriber tests
 func newSingleSubscriberHarness(t *testing.T, loadInitial bool) *testHarness {
 	harness := newTestHarness(t, 1, loadInitial)
-	
+
 	// Add delay to ensure clean filesystem state before starting watcher
 	time.Sleep(FileWriteDelay)
-	
+
 	return harness
 }
 
@@ -126,7 +126,7 @@ func (h *testHarness) waitForEvent(expectedOp reader.Operation, timeout time.Dur
 	if events == nil {
 		h.t.Fatal("no subscribers available for waitForEvent")
 	}
-	
+
 	select {
 	case event := <-events:
 		assert.Equal(h.t, expectedOp, event.Op, "expected %v event, got %v", expectedOp, event.Op)
@@ -151,12 +151,12 @@ func (h *testHarness) assertEventMatch(event reader.Event, expectedOp reader.Ope
 // createTestFile creates a file with the given content in the test directory
 func (h *testHarness) createTestFile(relativePath string, content string) error {
 	fullPath := filepath.Join(h.tmpDir, relativePath)
-	
+
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 		return err
 	}
-	
+
 	return os.WriteFile(fullPath, []byte(content), 0644)
 }
 
@@ -179,11 +179,11 @@ func (h *testHarness) generateRealisticFilename(maxDepth int) string {
 	for d := 0; d < depth; d++ {
 		pathParts = append(pathParts, words.Random())
 	}
-	
+
 	// Add the filename
 	filename := fmt.Sprintf("%s-%s.md", words.Random(), words.Random())
 	pathParts = append(pathParts, filename)
-	
+
 	return filepath.Join(pathParts...)
 }
 
@@ -199,12 +199,12 @@ func (h *testHarness) generateMarkdownContent(title string, suffix string) strin
 func (h *testHarness) generateRealisticFileSet(count int, maxDepth int) ([]string, []string) {
 	filenames := make([]string, count)
 	titles := make([]string, count)
-	
+
 	for i := 0; i < count; i++ {
 		filenames[i] = h.generateRealisticFilename(maxDepth)
 		titles[i] = fmt.Sprintf("%s %s", words.Random(), words.Random())
 	}
-	
+
 	return filenames, titles
 }
 
@@ -214,7 +214,7 @@ func (h *testHarness) expectNoEvent(timeout time.Duration) {
 	if events == nil {
 		h.t.Fatal("no subscribers available for expectNoEvent")
 	}
-	
+
 	select {
 	case event := <-events:
 		h.t.Fatalf("expected no event, but received %v event for %s", event.Op, event.Id)
@@ -229,7 +229,7 @@ func (h *testHarness) drainEvents() []reader.Event {
 	if events == nil {
 		return nil
 	}
-	
+
 	var drained []reader.Event
 	for {
 		select {

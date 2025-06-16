@@ -60,14 +60,14 @@ func TestReader_LoadInitialDocuments(t *testing.T) {
 
 	// Use test harness for event validation but with external reader
 	harness := &testHarness{t: t}
-	
+
 	select {
 	case loadEvent := <-events:
 		harness.assertEventMatch(loadEvent, reader.Load, "test.md", []byte(testContent))
 	case <-time.After(DefaultTimeout):
 		t.Fatal("timeout waiting for load event")
 	}
-	
+
 	select {
 	case completeEvent := <-events:
 		harness.assertEventMatch(completeEvent, reader.SubscriberLoadComplete, "", nil)
