@@ -78,22 +78,6 @@ func NewReader(name string, location string) (*Reader, error) {
 		events:      make(chan event),
 	}
 
-	// Create a subscription so we can listen for the initial load events
-	sub := make(chan reader.Event)
-	defer client.Unsubscribe(client.Subscribe(sub, true))
-
-	// Wait for the subscriber to complete its initial load
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		for ev := range sub {
-			if ev.Op == reader.SubscriberLoadComplete {
-				wg.Done()
-				return
-			}
-		}
-	}()
-
 	go client.fileWatcher()
 	go client.eventDispatcher()
 
@@ -117,9 +101,6 @@ func NewReader(name string, location string) (*Reader, error) {
 		return nil
 	})
 
-	// Wait for all initial loads to finish, unsubscribe and close the channel
-	client.log.Debug("waiting for initial load to complete")
-	wg.Wait()
 	client.log.Debug("initial load complete")
 
 	return client, nil

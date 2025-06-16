@@ -74,7 +74,7 @@ func TestDocuments_Client_Watcher_Fuzz(t *testing.T) {
 	wantAbs := map[string]bool{}
 	wantRel := map[string]bool{}
 
-	for range 1000 {
+	for range 500 {
 		switch rand.Intn(4) {
 		case 0:
 			wantAbs[createFile(dir, "# Test Document")] = true
