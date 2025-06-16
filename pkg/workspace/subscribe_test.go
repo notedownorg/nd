@@ -46,13 +46,18 @@ func TestWorkspace_Events_SubscribeWithIntialDocuments_Sync(t *testing.T) {
 	sub := make(chan Event)
 	done := false
 	got := make(map[string]struct{})
+	mut := sync.Mutex{}
 	go func() {
 		for ev := range sub {
 			if ev.Op == SubscriberLoadComplete {
+				mut.Lock()
 				done = true
+				mut.Unlock()
 			}
 			if ev.Op == Load {
+				mut.Lock()
 				got[strings.Split(ev.Id, node.KindDelimiter)[1]] = struct{}{}
+				mut.Unlock()
 			}
 		}
 	}()
@@ -60,7 +65,11 @@ func TestWorkspace_Events_SubscribeWithIntialDocuments_Sync(t *testing.T) {
 	ws.Subscribe(sub, node.DocumentKind, true)
 
 	// Ensure we eventually receive the load complete event
-	waiter := func() bool { return done }
+	waiter := func() bool { 
+		mut.Lock()
+		defer mut.Unlock()
+		return done 
+	}
 	assert.Eventually(t, waiter, 3*time.Second, time.Millisecond*200, "wg didn't finish in time")
 
 	// Finally check that we received all the documents
@@ -68,7 +77,9 @@ func TestWorkspace_Events_SubscribeWithIntialDocuments_Sync(t *testing.T) {
 	for _, doc := range reader.ListFiles() {
 		want[doc] = struct{}{}
 	}
+	mut.Lock()
 	assert.Equal(t, want, got)
+	mut.Unlock()
 }
 
 func TestWorkspace_Events_Fuzz(t *testing.T) {
@@ -138,5 +149,7 @@ func TestWorkspace_Events_Fuzz(t *testing.T) {
 
 	time.Sleep(2 * time.Second)
 
+	mut.Lock()
 	assert.Equal(t, want, got)
+	mut.Unlock()
 }

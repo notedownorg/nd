@@ -53,8 +53,10 @@ func (w *Workspace) Subscribe(ch chan Event, kind Kind, loadInitialNodes bool) i
 	// Add to subscribe map first to ensure we don't miss any events
 	// Multiple reporting of an event is better than missing one
 	sub := &subscriber{external: ch, kind: kind, loadCompleted: false, internal: make(chan Event, 1000)}
+	w.subscribersMu.Lock()
 	index := len(w.subscribers)
 	w.subscribers[index] = sub
+	w.subscribersMu.Unlock()
 
 	if loadInitialNodes {
 		go func(s *subscriber) {
@@ -114,6 +116,8 @@ func (w *Workspace) Subscribe(ch chan Event, kind Kind, loadInitialNodes bool) i
 }
 
 func (w *Workspace) Unsubscribe(index int) {
+	w.subscribersMu.Lock()
+	defer w.subscribersMu.Unlock()
 	sub, ok := w.subscribers[index]
 	if ok {
 		close(sub.external)
@@ -123,6 +127,7 @@ func (w *Workspace) Unsubscribe(index int) {
 
 func (w *Workspace) eventDispatcher() {
 	for event := range w.events {
+		w.subscribersMu.RLock()
 		for subId, subscriber := range w.subscribers {
 			if subscriber.kind != KindFromID(event.Id) {
 				continue
@@ -142,5 +147,6 @@ func (w *Workspace) eventDispatcher() {
 				w.log.Warn("subscriber channel is full, dropping event", "subscription", subId, "path", event.Id)
 			}
 		}
+		w.subscribersMu.RUnlock()
 	}
 }

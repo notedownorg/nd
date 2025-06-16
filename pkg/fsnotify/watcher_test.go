@@ -188,6 +188,7 @@ func TestMaxWaitDebouncing(t *testing.T) {
 
 	testFile := filepath.Join(tmpDir, "test.file")
 
+	var mu sync.Mutex
 	events := make([]fsnotify.Event, 0)
 	eventTimes := make([]time.Time, 0)
 
@@ -195,8 +196,10 @@ func TestMaxWaitDebouncing(t *testing.T) {
 		for {
 			select {
 			case event := <-w.Events():
+				mu.Lock()
 				events = append(events, event)
 				eventTimes = append(eventTimes, time.Now())
+				mu.Unlock()
 			case err := <-w.Errors():
 				t.Log("Error:", err)
 			}
@@ -217,6 +220,9 @@ func TestMaxWaitDebouncing(t *testing.T) {
 	}
 
 	time.Sleep(500 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
 
 	if len(events) == 0 {
 		t.Fatal("Expected at least one event")
@@ -335,6 +341,7 @@ func TestDebounceWithoutMaxWait(t *testing.T) {
 
 	testFile := filepath.Join(tmpDir, "debounce.file")
 
+	var mu sync.Mutex
 	events := make([]fsnotify.Event, 0)
 
 	go func() {
@@ -342,7 +349,9 @@ func TestDebounceWithoutMaxWait(t *testing.T) {
 			select {
 			case event := <-w.Events():
 				if event.Op == fsnotify.Change && event.Path == testFile {
+					mu.Lock()
 					events = append(events, event)
+					mu.Unlock()
 				}
 			case err := <-w.Errors():
 				t.Log("Error:", err)
@@ -357,7 +366,9 @@ func TestDebounceWithoutMaxWait(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 
 	// Clear events from file creation
+	mu.Lock()
 	events = make([]fsnotify.Event, 0)
+	mu.Unlock()
 
 	// Now do rapid updates
 	os.WriteFile(testFile, []byte("first"), 0644)
@@ -368,8 +379,12 @@ func TestDebounceWithoutMaxWait(t *testing.T) {
 
 	time.Sleep(300 * time.Millisecond)
 
-	assert.Equal(t, 1, len(events), "Should receive exactly one debounced event")
-	t.Logf("Received %d events from 3 rapid writes (debounce working)", len(events))
+	mu.Lock()
+	eventsLen := len(events)
+	mu.Unlock()
+
+	assert.Equal(t, 1, eventsLen, "Should receive exactly one debounced event")
+	t.Logf("Received %d events from 3 rapid writes (debounce working)", eventsLen)
 }
 
 func TestTimerCleanupOnRemove(t *testing.T) {
@@ -391,13 +406,16 @@ func TestTimerCleanupOnRemove(t *testing.T) {
 
 	testFile := filepath.Join(tmpDir, "cleanup.file")
 
+	var mu sync.Mutex
 	events := make([]fsnotify.Event, 0)
 
 	go func() {
 		for {
 			select {
 			case event := <-w.Events():
+				mu.Lock()
 				events = append(events, event)
+				mu.Unlock()
 			case err := <-w.Errors():
 				t.Log("Error:", err)
 			}
@@ -415,6 +433,7 @@ func TestTimerCleanupOnRemove(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond)
 
+	mu.Lock()
 	changeEvents := 0
 	removeEvents := 0
 	for _, event := range events {
@@ -427,6 +446,7 @@ func TestTimerCleanupOnRemove(t *testing.T) {
 			}
 		}
 	}
+	mu.Unlock()
 
 	assert.Equal(t, 1, removeEvents, "Should receive exactly one remove event")
 	assert.True(t, changeEvents <= 1, "Should receive at most one change event before removal")
