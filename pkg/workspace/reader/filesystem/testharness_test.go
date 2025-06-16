@@ -21,11 +21,15 @@ package filesystem
 
 import (
 	"bytes"
+	"fmt"
+	"math/rand"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/notedownorg/nd/pkg/test/words"
 	"github.com/notedownorg/nd/pkg/workspace/reader"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,6 +45,20 @@ type testHarness struct {
 	stopChan        chan struct{}
 	subscriberWg    sync.WaitGroup
 }
+
+// Test constants that can be shared across all test files
+const (
+	DefaultEventBufferSize     = 10
+	LargeEventBufferSize       = 2000
+	ExtremeEventBufferSize     = 5000
+	DefaultTimeout             = time.Second
+	FileWriteDelay             = 100 * time.Millisecond
+	ChangeEventTimeout         = 2 * time.Second
+	NonMarkdownTimeout         = 500 * time.Millisecond
+	EventPropagationDelay      = 500 * time.Millisecond
+	ConsistencyCheckInterval   = 200 * time.Millisecond
+	DefaultOperationDuration   = 3 * time.Second
+)
 
 // newTestHarness creates a new test environment with the specified number of subscribers.
 func newTestHarness(t *testing.T, numSubscribers int, loadInitial bool) *testHarness {
@@ -82,6 +100,145 @@ func newTestHarness(t *testing.T, numSubscribers int, loadInitial bool) *testHar
 	}
 
 	return harness
+}
+
+// newSingleSubscriberHarness creates a test harness optimized for single subscriber tests
+func newSingleSubscriberHarness(t *testing.T, loadInitial bool) *testHarness {
+	harness := newTestHarness(t, 1, loadInitial)
+	
+	// Add delay to ensure clean filesystem state before starting watcher
+	time.Sleep(FileWriteDelay)
+	
+	return harness
+}
+
+// getSingleSubscriber returns the first (and typically only) subscriber channel
+func (h *testHarness) getSingleSubscriber() chan reader.Event {
+	if len(h.subscribers) > 0 {
+		return h.subscribers[0]
+	}
+	return nil
+}
+
+// waitForEvent waits for a specific event type with timeout on the first subscriber
+func (h *testHarness) waitForEvent(expectedOp reader.Operation, timeout time.Duration) reader.Event {
+	events := h.getSingleSubscriber()
+	if events == nil {
+		h.t.Fatal("no subscribers available for waitForEvent")
+	}
+	
+	select {
+	case event := <-events:
+		assert.Equal(h.t, expectedOp, event.Op, "expected %v event, got %v", expectedOp, event.Op)
+		return event
+	case <-time.After(timeout):
+		h.t.Fatalf("timeout waiting for %v event", expectedOp)
+		return reader.Event{}
+	}
+}
+
+// assertEventMatch validates all properties of a reader event
+func (h *testHarness) assertEventMatch(event reader.Event, expectedOp reader.Operation, expectedID string, expectedContent []byte) {
+	assert.Equal(h.t, expectedOp, event.Op)
+	assert.Equal(h.t, expectedID, event.Id)
+	if expectedContent != nil {
+		assert.Equal(h.t, expectedContent, event.Content)
+	}
+}
+
+// File operation helpers that can be reused across tests
+
+// createTestFile creates a file with the given content in the test directory
+func (h *testHarness) createTestFile(relativePath string, content string) error {
+	fullPath := filepath.Join(h.tmpDir, relativePath)
+	
+	// Ensure directory exists
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		return err
+	}
+	
+	return os.WriteFile(fullPath, []byte(content), 0644)
+}
+
+// updateTestFile updates an existing file with new content
+func (h *testHarness) updateTestFile(relativePath string, content string) error {
+	fullPath := filepath.Join(h.tmpDir, relativePath)
+	return os.WriteFile(fullPath, []byte(content), 0644)
+}
+
+// deleteTestFile removes a file from the test directory
+func (h *testHarness) deleteTestFile(relativePath string) error {
+	fullPath := filepath.Join(h.tmpDir, relativePath)
+	return os.Remove(fullPath)
+}
+
+// generateRealisticFilename creates a realistic filename with optional nested directories
+func (h *testHarness) generateRealisticFilename(maxDepth int) string {
+	pathParts := []string{}
+	depth := rand.Intn(maxDepth + 1) // 0 to maxDepth levels of depth
+	for d := 0; d < depth; d++ {
+		pathParts = append(pathParts, words.Random())
+	}
+	
+	// Add the filename
+	filename := fmt.Sprintf("%s-%s.md", words.Random(), words.Random())
+	pathParts = append(pathParts, filename)
+	
+	return filepath.Join(pathParts...)
+}
+
+// generateMarkdownContent creates realistic markdown content with a title
+func (h *testHarness) generateMarkdownContent(title string, suffix string) string {
+	if suffix == "" {
+		suffix = "content"
+	}
+	return fmt.Sprintf("# %s\n\n%s %s %s", title, words.Random(), words.Random(), suffix)
+}
+
+// generateRealisticFileSet creates multiple realistic filenames for bulk operations
+func (h *testHarness) generateRealisticFileSet(count int, maxDepth int) ([]string, []string) {
+	filenames := make([]string, count)
+	titles := make([]string, count)
+	
+	for i := 0; i < count; i++ {
+		filenames[i] = h.generateRealisticFilename(maxDepth)
+		titles[i] = fmt.Sprintf("%s %s", words.Random(), words.Random())
+	}
+	
+	return filenames, titles
+}
+
+// expectNoEvent verifies that no event is received within the timeout period
+func (h *testHarness) expectNoEvent(timeout time.Duration) {
+	events := h.getSingleSubscriber()
+	if events == nil {
+		h.t.Fatal("no subscribers available for expectNoEvent")
+	}
+	
+	select {
+	case event := <-events:
+		h.t.Fatalf("expected no event, but received %v event for %s", event.Op, event.Id)
+	case <-time.After(timeout):
+		// Expected - no event received
+	}
+}
+
+// drainEvents removes all pending events from the first subscriber channel
+func (h *testHarness) drainEvents() []reader.Event {
+	events := h.getSingleSubscriber()
+	if events == nil {
+		return nil
+	}
+	
+	var drained []reader.Event
+	for {
+		select {
+		case event := <-events:
+			drained = append(drained, event)
+		default:
+			return drained
+		}
+	}
 }
 
 // cleanup shuts down the test harness and cleans up resources.
