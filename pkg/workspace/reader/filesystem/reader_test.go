@@ -15,39 +15,94 @@
 package filesystem
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/notedownorg/nd/pkg/workspace/reader"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestDocuments_Client(t *testing.T) {
-	dir, err := copyTestData(t.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
-	client, err := NewReader("testclient", dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Len(t, client.documents, 1)
+// Note: Test constants and helper functions have been moved to testharness_test.go
+
+func TestReader_Subscribe(t *testing.T) {
+	harness := newSingleSubscriberHarness(t, false)
+	defer harness.cleanup()
+
+	events := harness.getSingleSubscriber()
+	subscriptionID := harness.reader.Subscribe(events, false)
+	assert.Greater(t, subscriptionID, 0)
+
+	harness.reader.Unsubscribe(subscriptionID)
 }
 
-func loadtestDocuments_Client(count int, t *testing.T) {
-	dir, err := generateTestData("client", count)
-	if err != nil {
-		t.Fatal(err)
+func TestReader_LoadInitialDocuments(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "filesystem-reader-test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	testFile := filepath.Join(tmpDir, "test.md")
+	testContent := "# Test Document\nThis is a test."
+	err = os.WriteFile(testFile, []byte(testContent), 0644)
+	require.NoError(t, err)
+
+	// Add delay to ensure file is fully written before starting watcher
+	time.Sleep(FileWriteDelay)
+
+	r, err := NewReader(tmpDir)
+	require.NoError(t, err)
+	defer r.Close()
+
+	events := make(chan reader.Event, DefaultEventBufferSize)
+	r.Subscribe(events, true)
+
+	// Use test harness for event validation but with external reader
+	harness := &testHarness{t: t}
+
+	select {
+	case loadEvent := <-events:
+		harness.assertEventMatch(loadEvent, reader.Load, "test.md", []byte(testContent))
+	case <-time.After(DefaultTimeout):
+		t.Fatal("timeout waiting for load event")
 	}
-	client, err := NewReader("testclient", dir)
-	if err != nil {
-		t.Fatal(err)
+
+	select {
+	case completeEvent := <-events:
+		harness.assertEventMatch(completeEvent, reader.SubscriberLoadComplete, "", nil)
+	case <-time.After(DefaultTimeout):
+		t.Fatal("timeout waiting for load complete event")
 	}
-	assert.Len(t, client.documents, count)
 }
 
-// Load test rather than benchmark as we are testing the ability to handle a large number of files not the speed (for now)
-func TestDocuments_Client_Loadtest_10(t *testing.T)    { loadtestDocuments_Client(10, t) }
-func TestDocuments_Client_Loadtest_100(t *testing.T)   { loadtestDocuments_Client(100, t) }
-func TestDocuments_Client_Loadtest_1000(t *testing.T)  { loadtestDocuments_Client(1000, t) }
-func TestDocuments_Client_Loadtest_10000(t *testing.T) { loadtestDocuments_Client(10000, t) }
+func TestReader_FileChanges(t *testing.T) {
+	harness := newSingleSubscriberHarness(t, false)
+	defer harness.cleanup()
 
-// func TestDocuments_Client_Loadtest_50000(t *testing.T) { loadtestDocuments_Client(50000, t) }
+	events := harness.getSingleSubscriber()
+	harness.reader.Subscribe(events, false)
+
+	testContent := "# New Document"
+	err := harness.createTestFile("new.md", testContent)
+	require.NoError(t, err)
+
+	changeEvent := harness.waitForEvent(reader.Change, ChangeEventTimeout)
+	harness.assertEventMatch(changeEvent, reader.Change, "new.md", []byte(testContent))
+}
+
+func TestReader_OnlyMarkdownFiles(t *testing.T) {
+	harness := newSingleSubscriberHarness(t, false)
+	defer harness.cleanup()
+
+	events := harness.getSingleSubscriber()
+	harness.reader.Subscribe(events, false)
+
+	// Create non-markdown file (should be ignored)
+	txtFile := filepath.Join(harness.tmpDir, "test.txt")
+	err := os.WriteFile(txtFile, []byte("not markdown"), 0644)
+	require.NoError(t, err)
+
+	// Should not receive event for non-markdown file
+	harness.expectNoEvent(NonMarkdownTimeout)
+}

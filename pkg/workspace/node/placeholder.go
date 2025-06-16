@@ -21,7 +21,7 @@ type Placeholder struct {
 	content []byte
 }
 
-var PlaceHolderKind kind = "Placeholder"
+var PlaceHolderKind Kind = "Placeholder"
 
 func NewPlaceholder(data []byte) *Placeholder {
 	return &Placeholder{

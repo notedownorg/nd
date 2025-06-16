@@ -34,13 +34,18 @@ import (
 func TestWorkspace_Reader(t *testing.T) {
 	data := loadFilesToBytes(t, "testdata")
 
-	reader := mock.NewReader()
+	reader := mock.NewReader(t)
 	ws, err := NewWorkspace("test", reader)
 	defer ws.Close()
 	assert.NoError(t, err)
 
+	keys := make([]string, 0, len(data))
+	for key := range data {
+		keys = append(keys, key)
+	}
+
 	for range 10000 {
-		content := data[rand.IntN(len(data))]
+		content := data[keys[rand.IntN(len(keys))]]
 		switch rand.IntN(4) {
 		case 0:
 			reader.Add(words.Random()+".md", content)
@@ -58,7 +63,7 @@ func TestWorkspace_Reader(t *testing.T) {
 	for _, key := range reader.ListFiles() {
 		want[DocumentId(key)] = string(reader.GetContent(key))
 	}
-	for _, doc := range ws.documents {
+	for _, doc := range ws.documents.Values() {
 		got[doc.ID()] = doc.Markdown()
 	}
 
@@ -119,7 +124,7 @@ func TestWorkspace_LoadDocument(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ws := Workspace{documents: make(map[string]*Document)}
+			ws, err := NewWorkspace("test", mock.NewReader(t))
 
 			content, err := os.ReadFile(filepath.Join("testdata", tt.filename))
 			require.NoError(t, err)
@@ -129,13 +134,13 @@ func TestWorkspace_LoadDocument(t *testing.T) {
 			// Since we don't have access to the document ID directly,
 			// we'll get the first (and only) document from the workspace
 			var doc *Document
-			for _, d := range ws.documents {
+			for _, d := range ws.documents.Values() {
 				doc = d
 				break
 			}
 
 			// Its enough to check that the round trip works
-			assert.NotNil(t, doc)
+			require.NotNil(t, doc)
 			assert.Equal(t, string(content), doc.Markdown())
 		})
 	}

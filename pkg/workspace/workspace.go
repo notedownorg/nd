@@ -27,20 +27,27 @@ type Workspace struct {
 
 	// Nodes stored by kind for faster lookup
 	// ids are prefixed with the kind if we need to workout which map to look in see kindFromID
-	documents map[string]*Document
+	documents *Cache[*Document]
+
+	subscribers map[int]*subscriber
+	events      chan Event
 }
 
 func NewWorkspace(name string, r reader.Reader) (*Workspace, error) {
+	ev := make(chan Event)
 	ws := &Workspace{
-		log:       slog.Default().With("workspace", name),
-		documents: make(map[string]*Document),
-		closers:   make([]func(), 0, 2),
+		log:         slog.Default().With("workspace", name),
+		closers:     make([]func(), 0, 2),
+		subscribers: make(map[int]*subscriber),
+		events:      ev,
+		documents:   newCache[*Document](ev),
 	}
 
 	readerSubscription := make(chan reader.Event)
 	subId := r.Subscribe(readerSubscription, true)
-	ws.closers = append(ws.closers, func() { r.Unsubscribe(subId); close(readerSubscription) })
+	ws.closers = append(ws.closers, func() { r.Unsubscribe(subId) })
 
+	go ws.eventDispatcher()
 	go ws.processDocuments(readerSubscription)
 
 	return ws, nil
@@ -56,9 +63,7 @@ func (w *Workspace) deleteNode(id string) {
 	kind := KindFromID(id)
 	switch kind {
 	case DocumentKind:
-		delete(w.documents, id)
-		// TODO: verify that we don't need to delete nodes not accessible from the workspace struct
-		// I think Go garbage collection should take care of this for us?
+		w.documents.Remove(id)
 	default:
 		return
 	}

@@ -23,8 +23,8 @@ type fatalf interface {
 	Fatalf(format string, args ...any)
 }
 
-func loadFilesToBytes(t fatalf, dir string) [][]byte {
-	var filesData [][]byte
+func loadFilesToBytes(t fatalf, dir string) map[string][]byte {
+	filesData := make(map[string][]byte)
 
 	// Read directory contents
 	files, err := os.ReadDir(dir)
@@ -47,8 +47,7 @@ func loadFilesToBytes(t fatalf, dir string) [][]byte {
 			t.Fatalf("Failed to read file: %s, error: %v\n", filePath, err)
 		}
 
-		// Append to slice
-		filesData = append(filesData, data)
+		filesData[file.Name()] = data
 	}
 
 	return filesData

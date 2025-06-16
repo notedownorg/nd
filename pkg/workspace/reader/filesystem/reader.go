@@ -15,8 +15,7 @@
 package filesystem
 
 import (
-	"fmt"
-	"log/slog"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,125 +24,223 @@ import (
 
 	"github.com/notedownorg/nd/pkg/fsnotify"
 	"github.com/notedownorg/nd/pkg/workspace/reader"
-	"golang.org/x/sync/semaphore"
 )
 
-var _ reader.Reader = &Reader{}
-
-// The filesystem reader is responsible for processing files on disk and emitting events when changes
-// to the graph are detected (i.e. a file is added, removed or modified)
-// It is not responsible for parsing the documents, maintaining the graph or handling mutations to the graph/files.
 type Reader struct {
-	log  *slog.Logger
-	root string
-
-	// Map of relative location (id) to document
-	documents map[string]document
-	docMutex  sync.RWMutex
-
+	root    string
 	watcher *fsnotify.RecursiveWatcher
 
-	subscribers map[int]chan reader.Event
-
-	// Everytime a goroutine makes a blocking syscall (in our case usually file i/o) it uses a new thread so to avoid
-	// large workspaces exhausting the thread limit we use a semaphore to limit the number of concurrent goroutines
-	threadLimit *semaphore.Weighted
+	subscribersMutex *sync.RWMutex
+	subscribers      map[int]*subscriber
+	nextID           int
 
 	errors chan error
-	events chan reader.Event
 }
 
-func NewReader(name string, location string) (*Reader, error) {
-	if !filepath.IsAbs(location) {
-		return nil, fmt.Errorf("location must be an absolute path got %s", location)
-	}
-	ignoredDirs := []string{".git", ".vscode", ".debug", ".stversions", ".stfolder"}
-	watcher, err := fsnotify.NewRecursiveWatcher(location, fsnotify.WithIgnoredDirs(ignoredDirs))
+type subscriber struct {
+	id       int
+	events   chan reader.Event
+	buffered []reader.Event
+	mu       sync.Mutex
+}
+
+func NewReader(root string) (*Reader, error) {
+	watcher, err := fsnotify.NewRecursiveWatcher(
+		root,
+		fsnotify.WithDebounce(50*time.Millisecond),
+		fsnotify.WithMaxWait(150*time.Millisecond),
+		fsnotify.WithIgnoredDirs([]string{".git", "node_modules", ".DS_Store"}),
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	client := &Reader{
-		log:         slog.Default().With("name", name),
-		root:        location,
-		documents:   make(map[string]document),
-		docMutex:    sync.RWMutex{},
-		watcher:     watcher,
-		subscribers: make(map[int]chan reader.Event),
-		threadLimit: semaphore.NewWeighted(1000), // Avoid exhausting golang max threads
-		errors:      make(chan error),
-		events:      make(chan reader.Event),
+	r := &Reader{
+		root:             root,
+		watcher:          watcher,
+		subscribersMutex: &sync.RWMutex{},
+		subscribers:      make(map[int]*subscriber),
+		nextID:           1,
+		errors:           make(chan error, 100),
 	}
 
-	// Create a subscription so we can listen for the initial load events
-	sub := make(chan reader.Event)
-	subscriberIndex := client.Subscribe(sub, true)
+	go r.handleEvents()
+	go r.forwardErrors()
 
-	// For each file we process on intial load, a load event is emitted
-	// Therefore if our subscriber has received a load event for each file we have finished the initial load
-	var wg sync.WaitGroup
-	go func() {
-		for ev := range sub {
-			if ev.Op == reader.Load {
-				wg.Done()
+	return r, nil
+}
+
+func (r *Reader) Subscribe(ch chan reader.Event, loadInitialDocuments bool) int {
+	r.subscribersMutex.Lock()
+	defer r.subscribersMutex.Unlock()
+
+	id := r.nextID
+	r.nextID++
+
+	sub := &subscriber{
+		id:     id,
+		events: ch,
+	}
+
+	r.subscribers[id] = sub
+
+	if loadInitialDocuments {
+		go r.loadInitialDocuments(sub)
+	}
+
+	return id
+}
+
+func (r *Reader) Unsubscribe(id int) {
+	r.subscribersMutex.Lock()
+	defer r.subscribersMutex.Unlock()
+
+	delete(r.subscribers, id)
+}
+
+func (r *Reader) Errors() <-chan error {
+	return r.errors
+}
+
+func (r *Reader) Close() error {
+	return r.watcher.Close()
+}
+
+func (r *Reader) handleEvents() {
+	for event := range r.watcher.Events() {
+		if !r.isMarkdownFile(event.Path) {
+			continue
+		}
+
+		var readerEvent reader.Event
+		switch event.Op {
+		case fsnotify.Change:
+			content, err := os.ReadFile(event.Path)
+			if err != nil {
+				r.errors <- err
+				continue
+			}
+			readerEvent = reader.Event{
+				Op:      reader.Change,
+				Id:      r.pathToID(event.Path),
+				Content: content,
+			}
+		case fsnotify.Remove:
+			readerEvent = reader.Event{
+				Op: reader.Delete,
+				Id: r.pathToID(event.Path),
 			}
 		}
-	}()
 
-	go client.fileWatcher()
-	go client.eventDispatcher()
+		r.broadcastEvent(readerEvent)
+	}
+}
 
-	// Recurse through the root directory and process all the files to build the initial state
-	client.log.Debug("walking workspace to build initial state")
-	err = filepath.Walk(client.root, func(path string, info os.FileInfo, err error) error {
+func (r *Reader) forwardErrors() {
+	for err := range r.watcher.Errors() {
+		r.errors <- err
+	}
+}
+
+func (r *Reader) loadInitialDocuments(sub *subscriber) {
+	err := filepath.WalkDir(r.root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() {
+
+		if d.IsDir() || !r.isMarkdownFile(path) {
 			return nil
 		}
-		for _, ignoredDir := range ignoredDirs {
-			if strings.Contains(path, ignoredDir) {
-				return nil
-			}
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			r.errors <- err
+			return nil
 		}
-		if strings.HasSuffix(path, ".md") {
-			wg.Add(1) // Increment the wait group for each file we process
-			client.processFile(path, true)
+
+		event := reader.Event{
+			Op:      reader.Load,
+			Id:      r.pathToID(path),
+			Content: content,
 		}
+
+		sub.mu.Lock()
+		select {
+		case sub.events <- event:
+		default:
+			sub.buffered = append(sub.buffered, event)
+		}
+		sub.mu.Unlock()
+
 		return nil
 	})
 
-	// Wait for all initial loads to finish, unsubscribe and close the channel
-	client.log.Debug("waiting for initial load to complete")
-	wg.Wait()
-	client.Unsubscribe(subscriberIndex)
-	close(sub)
-
-	return client, nil
-}
-
-func (r *Reader) absolute(relative string) string {
-	if filepath.IsAbs(relative) {
-		return relative
+	if err != nil {
+		r.errors <- err
 	}
-	return filepath.Join(r.root, relative)
-}
 
-func (r *Reader) relative(absolute string) (string, error) {
-	if !filepath.IsAbs(absolute) {
-		return absolute, nil
+	loadCompleteEvent := reader.Event{
+		Op: reader.SubscriberLoadComplete,
 	}
-	return filepath.Rel(r.root, absolute)
+
+	sub.mu.Lock()
+	select {
+	case sub.events <- loadCompleteEvent:
+	default:
+		sub.buffered = append(sub.buffered, loadCompleteEvent)
+	}
+	sub.mu.Unlock()
+
+	go r.flushBufferedEvents(sub)
 }
 
-// We dont need to store the actual document content in the reader, just the minimal information required
-// to determine if the document has been modified and how to inform subscribers (i.e. the last modified time and ID)
-type document struct {
-	id           string
-	lastModified time.Time
+func (r *Reader) flushBufferedEvents(sub *subscriber) {
+	for {
+		sub.mu.Lock()
+		if len(sub.buffered) == 0 {
+			sub.mu.Unlock()
+			return
+		}
+
+		event := sub.buffered[0]
+		sub.buffered = sub.buffered[1:]
+		sub.mu.Unlock()
+
+		select {
+		case sub.events <- event:
+		default:
+			sub.mu.Lock()
+			sub.buffered = append([]reader.Event{event}, sub.buffered...)
+			sub.mu.Unlock()
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
 }
 
-func (d document) Modified(lastModified time.Time) bool {
-	return lastModified.UnixNano() > d.lastModified.UnixNano()
+func (r *Reader) broadcastEvent(event reader.Event) {
+	r.subscribersMutex.RLock()
+	defer r.subscribersMutex.RUnlock()
+
+	for _, sub := range r.subscribers {
+		sub.mu.Lock()
+		select {
+		case sub.events <- event:
+		default:
+			sub.buffered = append(sub.buffered, event)
+			go r.flushBufferedEvents(sub)
+		}
+		sub.mu.Unlock()
+	}
+}
+
+func (r *Reader) isMarkdownFile(path string) bool {
+	return strings.HasSuffix(strings.ToLower(path), ".md")
+}
+
+func (r *Reader) pathToID(path string) string {
+	relPath, err := filepath.Rel(r.root, path)
+	if err != nil {
+		return path
+	}
+	return relPath
 }

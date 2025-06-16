@@ -22,6 +22,6 @@ import (
 
 func TestMain(m *testing.M) {
 	// change to debug if you want to see the events, too noisy to leave on permanently though
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo.Level()})))
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug.Level()})))
 	os.Exit(m.Run())
 }

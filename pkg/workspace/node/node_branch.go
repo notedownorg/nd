@@ -35,7 +35,7 @@ func branchNodeWithId(id string) branchNodeOption {
 	}
 }
 
-func newBranchNode(kind kind, opts ...branchNodeOption) branchNode {
+func newBranchNode(kind Kind, opts ...branchNodeOption) branchNode {
 	n := branchNode{children: make([]Node, 0)}
 	for _, opt := range opts {
 		opt(&n)

@@ -35,9 +35,11 @@ type RecursiveWatcher struct {
 	watchersMutex *sync.RWMutex
 	watchers      map[string]struct{}
 
-	timersMutex *sync.RWMutex
-	timers      map[string]*time.Timer // used to debounce/dedupe events
-	debounce    time.Duration
+	timersMutex   *sync.RWMutex
+	timers        map[string]*time.Timer // used to debounce/dedupe events
+	maxWaitTimers map[string]*time.Timer // ensures events are sent within max wait time
+	debounce      time.Duration
+	maxWait       time.Duration
 }
 
 type Option func(*RecursiveWatcher)
@@ -51,6 +53,12 @@ func WithIgnoredDirs(dirs []string) Option {
 func WithDebounce(d time.Duration) Option {
 	return func(rw *RecursiveWatcher) {
 		rw.debounce = d
+	}
+}
+
+func WithMaxWait(d time.Duration) Option {
+	return func(rw *RecursiveWatcher) {
+		rw.maxWait = d
 	}
 }
 
@@ -70,8 +78,10 @@ func NewRecursiveWatcher(root string, opts ...Option) (*RecursiveWatcher, error)
 		watchersMutex: &sync.RWMutex{},
 		watchers:      make(map[string]struct{}),
 
-		timersMutex: &sync.RWMutex{},
-		timers:      make(map[string]*time.Timer),
+		timersMutex:   &sync.RWMutex{},
+		timers:        make(map[string]*time.Timer),
+		maxWaitTimers: make(map[string]*time.Timer),
+		maxWait:       500 * time.Millisecond, // default max wait
 	}
 
 	for _, opt := range opts {
@@ -117,13 +127,24 @@ func (rw *RecursiveWatcher) eventLoop() {
 			// If there is a write event, debounce it.
 			if event.Op.Has(fsnotify.Write) {
 				rw.timersMutex.Lock()
+
+				// Cancel existing debounce timer
 				if timer, ok := rw.timers[event.Name]; ok {
 					timer.Stop()
 				}
+
+				// Start/restart debounce timer
 				rw.timers[event.Name] = time.AfterFunc(rw.debounce, func() {
-					slog.Debug("handling write event", "path", event.Name)
-					rw.events <- Event{Path: event.Name, Op: Change}
+					rw.sendWriteEvent(event.Name)
 				})
+
+				// Start max wait timer if it doesn't exist
+				if _, ok := rw.maxWaitTimers[event.Name]; !ok {
+					rw.maxWaitTimers[event.Name] = time.AfterFunc(rw.maxWait, func() {
+						rw.sendWriteEvent(event.Name)
+					})
+				}
+
 				rw.timersMutex.Unlock()
 			}
 
@@ -135,6 +156,11 @@ func (rw *RecursiveWatcher) eventLoop() {
 				if ok {
 					timer.Stop()
 					delete(rw.timers, event.Name)
+				}
+				maxWaitTimer, ok := rw.maxWaitTimers[event.Name]
+				if ok {
+					maxWaitTimer.Stop()
+					delete(rw.maxWaitTimers, event.Name)
 				}
 				rw.timersMutex.Unlock()
 				slog.Debug("handling remove event", "path", event.Name)
@@ -218,6 +244,24 @@ func (rw *RecursiveWatcher) add(path string) {
 			rw.events <- Event{Path: path + "/" + entry.Name(), Op: Change}
 		}
 	}
+}
+
+func (rw *RecursiveWatcher) sendWriteEvent(path string) {
+	rw.timersMutex.Lock()
+	defer rw.timersMutex.Unlock()
+
+	// Clean up both timers
+	if timer, ok := rw.timers[path]; ok {
+		timer.Stop()
+		delete(rw.timers, path)
+	}
+	if maxWaitTimer, ok := rw.maxWaitTimers[path]; ok {
+		maxWaitTimer.Stop()
+		delete(rw.maxWaitTimers, path)
+	}
+
+	slog.Debug("handling write event", "path", path)
+	rw.events <- Event{Path: path, Op: Change}
 }
 
 func isDir(path string) bool {

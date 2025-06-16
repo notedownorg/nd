@@ -16,6 +16,7 @@ package mock
 
 import (
 	"sync"
+	"testing"
 
 	"github.com/notedownorg/nd/pkg/workspace/reader"
 )
@@ -28,14 +29,17 @@ type Reader struct {
 
 	subscribers map[int]chan reader.Event
 	errors      chan error
+	t           *testing.T
 }
 
-func NewReader() *Reader {
-	return &Reader{
+func NewReader(t *testing.T) *Reader {
+	reader := &Reader{
 		vfs:         make(map[string][]byte),
 		subscribers: make(map[int]chan reader.Event),
 		errors:      make(chan error),
+		t:           t,
 	}
+	return reader
 }
 
 func (r *Reader) Subscribe(ch chan reader.Event, loadInitialDocuments bool) int {
@@ -65,6 +69,7 @@ func (r *Reader) Errors() <-chan error {
 }
 
 func (r *Reader) sendEvent(event reader.Event) {
+	r.t.Logf("sending event: op: %v, id: %v\n", event.Op, event.Id)
 	for _, ch := range r.subscribers {
 		ch <- event
 	}

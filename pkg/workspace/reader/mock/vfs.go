@@ -40,8 +40,8 @@ func (r *Reader) Rename(oldPath, newPath string) {
 	r.vfs[newPath] = content
 	delete(r.vfs, oldPath)
 	r.vfsMutex.Unlock()
-	r.sendEvent(reader.Event{Op: reader.Delete, Id: oldPath})
 	r.sendEvent(reader.Event{Op: reader.Change, Id: newPath, Content: content})
+	r.sendEvent(reader.Event{Op: reader.Delete, Id: oldPath})
 }
 
 func (r *Reader) Remove(path string) {
