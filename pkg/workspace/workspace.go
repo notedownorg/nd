@@ -16,6 +16,7 @@ package workspace
 
 import (
 	"log/slog"
+	"sync"
 
 	. "github.com/notedownorg/nd/pkg/workspace/node"
 	"github.com/notedownorg/nd/pkg/workspace/reader"
@@ -29,8 +30,9 @@ type Workspace struct {
 	// ids are prefixed with the kind if we need to workout which map to look in see kindFromID
 	documents *Cache[*Document]
 
-	subscribers map[int]*subscriber
-	events      chan Event
+	subscribersMu sync.RWMutex
+	subscribers   map[int]*subscriber
+	events        chan Event
 }
 
 func NewWorkspace(name string, r reader.Reader) (*Workspace, error) {
