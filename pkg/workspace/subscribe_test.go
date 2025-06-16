@@ -35,9 +35,7 @@ func TestWorkspace_Events_SubscribeWithIntialDocuments_Sync(t *testing.T) {
 	defer ws.Close()
 	assert.NoError(t, err)
 
-	clock := int64(0)
 	for key, content := range data {
-		clock += 1
 		reader.Add(key, content)
 	}
 
@@ -58,7 +56,7 @@ func TestWorkspace_Events_SubscribeWithIntialDocuments_Sync(t *testing.T) {
 
 	ws.Subscribe(sub, node.DocumentKind, true)
 
-	// Ensure we eventually receive the load complete event and that an event was received for each document node
+	// Ensure we eventually receive the load complete event
 	waiter := func(d bool) func() bool { return func() bool { return done } }(done)
 	assert.Eventually(t, waiter, 3*time.Second, time.Millisecond*200, "wg didn't finish in time")
 

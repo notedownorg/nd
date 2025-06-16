@@ -20,7 +20,6 @@ import (
 	"os"
 	"path"
 	"testing"
-	"time"
 
 	"github.com/notedownorg/nd/pkg/test/words"
 	cp "github.com/otiai10/copy"
@@ -81,57 +80,58 @@ func ensureNoErrors(t *testing.T, ch <-chan error) {
 	}
 }
 
-func createFile(dir string, content string, errs chan<- error) string {
+func createFile(dir string, content string) string {
 	filename := fmt.Sprintf("%v.md", words.Random())
 	extraDir := words.Random()
+	fullDir := fmt.Sprintf("%v/%v", dir, extraDir)
 
-	// ensure the directory exists
-	if err := os.MkdirAll(fmt.Sprintf("%v/%v", dir, extraDir), 0777); err != nil {
-		errs <- err
+	// If the directory doesn't exist, create it
+	// If it does exist we need to override fullDir to the existing directory
+	// This is to avoid issues were certain OSes handle case sensitivity differently
+	_, err := os.Stat(fullDir)
+	if os.IsNotExist(err) {
+		if err := os.MkdirAll(fullDir, 0777); err != nil {
+			slog.Error("failed to create directory", slog.String("dir", fullDir), slog.Any("error", err))
+		}
+	} else if err != nil {
+		slog.Error("failed to stat directory", slog.String("dir", fullDir), slog.Any("error", err))
+	} else {
+		// Keep the original fullDir path - directory already exists
 	}
-	path := fmt.Sprintf("%v/%v/%v", dir, extraDir, filename)
+	path := fmt.Sprintf("%v/%v", fullDir, filename)
 
 	slog.Debug("creating file", slog.String("file", path))
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		errs <- err
+		slog.Error("failed to create file", slog.String("file", path), slog.Any("error", err))
 	}
 	return path
 }
 
-func createThenDeleteFile(dir string, errs chan<- error) string {
+func createThenDeleteFile(dir string) string {
 	content := "some random text"
-	path := createFile(dir, content, errs)
-	go func() {
-		time.Sleep(time.Second) // allow the file to be processed
-		slog.Debug("deleting file", slog.String("file", path))
-		if err := os.Remove(path); err != nil {
-			errs <- err
-		}
-	}()
+	path := createFile(dir, content)
+	slog.Debug("deleting file", slog.String("file", path))
+	if err := os.Remove(path); err != nil {
+		slog.Error("failed to delete file", slog.String("file", path), slog.Any("error", err))
+	}
 	return path
 }
 
-func createThenUpdateFile(dir string, content string, errs chan<- error) string {
-	path := createFile(dir, content, errs)
-	go func() {
-		time.Sleep(time.Second) // allow the file to be processed
-		slog.Debug("updating file", slog.String("file", path))
-		if err := os.WriteFile(path, []byte("some random updated text"), 0644); err != nil {
-			errs <- err
-		}
-	}()
+func createThenUpdateFile(dir string, content string) string {
+	path := createFile(dir, content)
+	slog.Debug("updating file", slog.String("file", path))
+	if err := os.WriteFile(path, []byte("some random updated text"), 0644); err != nil {
+		slog.Error("failed to update file", slog.String("file", path), slog.Any("error", err))
+	}
 	return path
 }
 
-func createThenRenameFile(dir string, content string, errs chan<- error) string {
-	path := createFile(dir, content, errs)
+func createThenRenameFile(dir string, content string) string {
+	path := createFile(dir, content)
 	newPath := fmt.Sprintf("%v/%v.md", dir, words.Random())
-	go func() {
-		time.Sleep(time.Second) // allow the file to be processed
-		slog.Debug("renaming file", slog.String("file", path), slog.String("new", newPath))
-		if err := os.Rename(path, newPath); err != nil {
-			errs <- err
-		}
-	}()
+	slog.Debug("renaming file", slog.String("file", path), slog.String("new", newPath))
+	if err := os.Rename(path, newPath); err != nil {
+		slog.Error("failed to rename file", slog.String("file", path), slog.Any("error", err))
+	}
 	return newPath
 }

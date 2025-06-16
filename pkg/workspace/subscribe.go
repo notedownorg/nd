@@ -47,13 +47,12 @@ type subscriber struct {
 	external      chan Event
 	kind          Kind
 	loadCompleted bool
-	done          chan struct{}
 }
 
 func (w *Workspace) Subscribe(ch chan Event, kind Kind, loadInitialNodes bool) int {
 	// Add to subscribe map first to ensure we don't miss any events
 	// Multiple reporting of an event is better than missing one
-	sub := &subscriber{external: ch, kind: kind, done: make(chan struct{}), loadCompleted: false, internal: make(chan Event, 1000)}
+	sub := &subscriber{external: ch, kind: kind, loadCompleted: false, internal: make(chan Event, 1000)}
 	index := len(w.subscribers)
 	w.subscribers[index] = sub
 
@@ -83,14 +82,29 @@ func (w *Workspace) Subscribe(ch chan Event, kind Kind, loadInitialNodes bool) i
 	// Handle subscribers in a goroutine to prevent one subscriber from blocking the entire workspace
 	// but ensure that each subscriber receives the events in the correct order.
 	go func(s *subscriber) {
+		// Recover from a panic if the subscriber has been closed
+		// Likely this will only happen in tests but its theoretically possible in regular usage
+		defer func() {
+			if recover() != nil {
+				w.log.Warn("subscriber goroutine panicked")
+			}
+		}()
+		
+		loadBuffer := make([]Event, 0, 1000)
 		for ev := range s.internal {
-			// Recover from a panic if the subscriber has been closed
-			// Likely this will only happen in tests but its theoretically possible in regular usage
-			defer func() {
-				if recover() != nil {
-					w.log.Warn("dropping event as subscriber has been closed", "path", ev.Id)
+
+			// If the subscriber has not completed loading, buffer everything we receive until it has
+			if !s.loadCompleted {
+				loadBuffer = append(loadBuffer, ev)
+				continue
+			}
+			// If the subscriber has completed loading, send all buffered events
+			if s.loadCompleted && loadBuffer != nil {
+				for _, bufferedEvent := range loadBuffer {
+					s.external <- bufferedEvent
 				}
-			}()
+				loadBuffer = nil // unallocate the buffer to free up memory
+			}
 			s.external <- ev
 		}
 
@@ -123,7 +137,7 @@ func (w *Workspace) eventDispatcher() {
 			}()
 			select {
 			case subscriber.internal <- event:
-				// do nothing
+				// attempt to send the event to the subscriber but drop it if the channel is full
 			default:
 				w.log.Warn("subscriber channel is full, dropping event", "subscription", subId, "path", event.Id)
 			}

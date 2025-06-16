@@ -46,7 +46,7 @@ type Reader struct {
 	watcher *fsnotify.RecursiveWatcher
 
 	subscriberMutex sync.RWMutex
-	subscribers     map[int]chan reader.Event
+	subscribers     map[int]*subscriber
 
 	// Everytime a goroutine makes a blocking syscall (in our case usually file i/o) it uses a new thread so to avoid
 	// large workspaces exhausting the thread limit we use a semaphore to limit the number of concurrent goroutines
@@ -72,7 +72,7 @@ func NewReader(name string, location string) (*Reader, error) {
 		documents:   make(map[string]document),
 		docMutex:    sync.RWMutex{},
 		watcher:     watcher,
-		subscribers: make(map[int]chan reader.Event),
+		subscribers: make(map[int]*subscriber),
 		threadLimit: semaphore.NewWeighted(1000), // Avoid exhausting golang max threads
 		errors:      make(chan error),
 		events:      make(chan event),
@@ -80,7 +80,7 @@ func NewReader(name string, location string) (*Reader, error) {
 
 	// Create a subscription so we can listen for the initial load events
 	sub := make(chan reader.Event)
-	subscriberIndex := client.Subscribe(sub, true)
+	defer client.Unsubscribe(client.Subscribe(sub, true))
 
 	// For each file we process on intial load, a load event is emitted
 	// Therefore if our subscriber has received a load event for each file we have finished the initial load
@@ -111,7 +111,7 @@ func NewReader(name string, location string) (*Reader, error) {
 			}
 		}
 		if strings.HasSuffix(path, ".md") {
-			wg.Add(1)                         // Increment the wait group for each file we process
+			wg.Add(1)
 			client.processFile(path, true, 0) // ignore clock for initial load
 		}
 		return nil
@@ -120,7 +120,7 @@ func NewReader(name string, location string) (*Reader, error) {
 	// Wait for all initial loads to finish, unsubscribe and close the channel
 	client.log.Debug("waiting for initial load to complete")
 	wg.Wait()
-	client.Unsubscribe(subscriberIndex)
+	client.log.Debug("initial load complete")
 
 	return client, nil
 }

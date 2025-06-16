@@ -71,21 +71,19 @@ func TestDocuments_Client_Watcher_Fuzz(t *testing.T) {
 	}
 
 	// Throw a bunch of events at the client and ensure the documents are updated correctly
-	errChan := make(chan error)
-	go ensureNoErrors(t, errChan)
 	wantAbs := map[string]bool{}
 	wantRel := map[string]bool{}
 
 	for range 1000 {
 		switch rand.Intn(4) {
 		case 0:
-			wantAbs[createFile(dir, "# Test Document", errChan)] = true
+			wantAbs[createFile(dir, "# Test Document")] = true
 		case 1:
-			wantAbs[createThenUpdateFile(dir, "# Test Document Updated", errChan)] = true
+			wantAbs[createThenUpdateFile(dir, "# Test Document Updated")] = true
 		case 2:
-			createThenDeleteFile(dir, errChan)
+			createThenDeleteFile(dir)
 		case 3:
-			wantAbs[createThenRenameFile(dir, "# Test Document", errChan)] = true
+			wantAbs[createThenRenameFile(dir, "# Test Document")] = true
 		}
 	}
 

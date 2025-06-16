@@ -29,26 +29,23 @@ func (r *Reader) processFile(path string, load bool, clock uint64) {
 		r.log.Debug("file is up to date, stopping short", "file", path)
 		return
 	}
-	// Do the rest in a goroutine so we can continue doing other things
 	r.log.Debug("processing file", "file", path)
-	go func() {
-		rel, content := r.loadDocument(path)
+	rel, content := r.loadDocument(path)
 
-		r.log.Debug("updating document in cache", "file", path, "relative", rel)
-		r.docMutex.Lock()
-		r.documents[rel] = document{id: rel, lastModified: time.Now()}
-		r.docMutex.Unlock()
+	r.log.Debug("updating document in cache", "file", path, "relative", rel)
+	r.docMutex.Lock()
+	r.documents[rel] = document{id: rel, lastModified: time.Now()}
+	r.docMutex.Unlock()
 
-		r.log.Debug("emitting event", "file", path, "relative", rel)
-		op := func() reader.Operation {
-			if load {
-				return reader.Load
-			} else {
-				return reader.Change
-			}
-		}()
-		r.events <- event{Event: reader.Event{Op: op, Id: rel, Content: content}, clock: clock}
+	r.log.Debug("emitting event", "file", path, "relative", rel)
+	op := func() reader.Operation {
+		if load {
+			return reader.Load
+		} else {
+			return reader.Change
+		}
 	}()
+	r.events <- event{Event: reader.Event{Op: op, Id: rel, Content: content}, clock: clock}
 }
 
 // Takes absolute or relative path and returns relative key + content
@@ -66,8 +63,13 @@ func (r *Reader) loadDocument(path string) (string, []byte) {
 
 	content, err := os.ReadFile(r.absolute(path))
 	if err != nil {
-		r.log.Error("failed to read file", "path", path, "error", err)
-		r.errors <- fmt.Errorf("failed to read file: %w", err)
+		if os.IsNotExist(err) {
+			// file could have already been moved or deleted so only warn dont error
+			r.log.Warn("file does not exist", "path", path)
+		} else {
+			r.log.Error("failed to read file", "path", path, "error", err)
+			r.errors <- fmt.Errorf("failed to read file: %w", err)
+		}
 		return rel, nil
 	}
 	return rel, content
@@ -76,9 +78,15 @@ func (r *Reader) loadDocument(path string) (string, []byte) {
 func (r *Reader) isUpToDate(file string) bool {
 	info, err := os.Stat(file)
 	if err != nil {
-		r.log.Error("failed to get file info", "file", file, "error", err)
-		r.errors <- fmt.Errorf("failed to get file info: %w", err)
-		return false
+		if os.IsNotExist(err) {
+			// file could have already been moved or deleted so only warn dont error
+			r.log.Warn("file does not exist", "path", file)
+			return false
+		} else {
+			r.log.Error("failed to get file info", "file", file, "error", err)
+			r.errors <- fmt.Errorf("failed to get file info: %w", err)
+			return false
+		}
 	}
 	rel, err := r.relative(file)
 	if err != nil {

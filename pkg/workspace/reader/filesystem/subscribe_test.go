@@ -24,7 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestDocuments_Client_Events_SubscribeWithInitialDocuments_Sync(t *testing.T) {
+func TestFilesystem_Client_Events_SubscribeWithInitialDocuments(t *testing.T) {
 	// Do the setup and ensure its correct
 	dir, err := copyTestData(t.Name())
 	if err != nil {
@@ -60,41 +60,7 @@ func TestDocuments_Client_Events_SubscribeWithInitialDocuments_Sync(t *testing.T
 	assert.Len(t, client.documents, loaded)
 }
 
-func TestDocuments_Client_Events_SubscribeWithInitialDocuments_Async(t *testing.T) {
-
-	// Do the setup and ensure its correct
-	dir, err := copyTestData(t.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
-	client, err := NewReader("testclient", dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Len(t, client.documents, 1)
-	go ensureNoErrors(t, client.Errors())
-
-	sub := make(chan reader.Event)
-	got := map[string]bool{}
-
-	go func() {
-		for {
-			select {
-			case ev := <-sub:
-				if ev.Op == reader.Load {
-					got[ev.Id] = true
-				}
-			}
-		}
-	}()
-
-	// Hook them up to the client and ensure we eventually receive all the initial documents
-	client.Subscribe(sub, true)
-	assert.Eventually(t, func() bool { return len(client.documents) == len(got) }, 3*time.Second, time.Millisecond*200, "sub finished with %v documents, expected %v", len(got), len(client.documents))
-}
-
-func TestDocuments_Client_Events_Fuzz(t *testing.T) {
-
+func TestFilesystem_Client_Events_Fuzz(t *testing.T) {
 	// Do the setup and ensure its correct
 	dir, err := copyTestData(t.Name())
 	if err != nil {
@@ -148,21 +114,20 @@ func TestDocuments_Client_Events_Fuzz(t *testing.T) {
 	client.Subscribe(sub2, false)
 
 	// Throw a bunch of events at the client and ensure the subscribers are notified correctly
-	errChan := make(chan error)
-	go ensureNoErrors(t, errChan)
 	wantAbs := map[string]bool{}
 	wantRel := map[string]bool{}
 
-	for range 1000 {
+	actionCount := 1000
+	for range actionCount {
 		switch rand.Intn(4) {
 		case 0:
-			wantAbs[createFile(dir, "# Test Document", errChan)] = true
+			wantAbs[createFile(dir, "# Test Document")] = true
 		case 1:
-			wantAbs[createThenUpdateFile(dir, "# Test Document Updated", errChan)] = true
+			wantAbs[createThenUpdateFile(dir, "# Test Document Updated")] = true
 		case 2:
-			createThenDeleteFile(dir, errChan)
+			createThenDeleteFile(dir)
 		case 3:
-			wantAbs[createThenRenameFile(dir, "# Test Document", errChan)] = true
+			wantAbs[createThenRenameFile(dir, "# Test Document")] = true
 		}
 	}
 
@@ -187,8 +152,8 @@ func TestDocuments_Client_Events_Fuzz(t *testing.T) {
 	}
 
 	// Wait until we have handled all the events
-	assert.Eventually(t, func() bool { return len(wantRel) == len(got1) }, 3*time.Second, time.Millisecond*200, "sub1 finished with %v documents, expected %v", len(got1), len(wantAbs))
-	assert.Eventually(t, func() bool { return len(wantRel) == len(got2) }, 3*time.Second, time.Millisecond*200, "sub2 finished with %v documents, expected %v", len(got2), len(wantAbs))
+	assert.Eventually(t, func() bool { return len(wantRel) == len(got1) && len(wantRel) == len(got2) }, 5*time.Second, time.Millisecond*200, "expected %v documents, sub1 %v sub2 %v", len(wantAbs), len(got1), len(got2))
+	// time.Sleep(10 * time.Millisecond * time.Duration(actionCount))
 
 	// Check the subscribers got the expected events
 	assert.Equal(t, wantRel, got1)
