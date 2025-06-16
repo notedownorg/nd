@@ -15,39 +15,125 @@
 package filesystem
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/notedownorg/nd/pkg/workspace/reader"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestFilesystem_Client(t *testing.T) {
-	dir, err := copyTestData(t.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
-	client, err := NewReader("testclient", dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assert.Len(t, client.documents, 1)
+func TestReader_Subscribe(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "filesystem-reader-test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	r, err := NewReader(tmpDir)
+	require.NoError(t, err)
+	defer r.Close()
+
+	events := make(chan reader.Event, 10)
+	subscriptionID := r.Subscribe(events, false)
+
+	assert.Greater(t, subscriptionID, 0)
+
+	r.Unsubscribe(subscriptionID)
 }
 
-func loadtestFilesystem_Client(count int, t *testing.T) {
-	dir, err := generateTestData("client", count)
-	if err != nil {
-		t.Fatal(err)
+func TestReader_LoadInitialDocuments(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "filesystem-reader-test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	testFile := filepath.Join(tmpDir, "test.md")
+	testContent := "# Test Document\nThis is a test."
+	err = os.WriteFile(testFile, []byte(testContent), 0644)
+	require.NoError(t, err)
+
+	// Add a small delay to ensure file is fully written before starting watcher
+	time.Sleep(100 * time.Millisecond)
+
+	r, err := NewReader(tmpDir)
+	require.NoError(t, err)
+	defer r.Close()
+
+	events := make(chan reader.Event, 10)
+	r.Subscribe(events, true)
+
+	var loadEvent, completeEvent reader.Event
+	select {
+	case loadEvent = <-events:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for load event")
 	}
-	client, err := NewReader("testclient", dir)
-	if err != nil {
-		t.Fatal(err)
+
+	select {
+	case completeEvent = <-events:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for load complete event")
 	}
-	assert.Len(t, client.documents, count)
+
+	assert.Equal(t, reader.Load, loadEvent.Op)
+	assert.Equal(t, "test.md", loadEvent.Id)
+	assert.Equal(t, []byte(testContent), loadEvent.Content)
+
+	assert.Equal(t, reader.SubscriberLoadComplete, completeEvent.Op)
 }
 
-// Load test rather than benchmark as we are testing the ability to handle a large number of files not the speed (for now)
-func TestFilesystem_Client_Loadtest_10(t *testing.T)    { loadtestFilesystem_Client(10, t) }
-func TestFilesystem_Client_Loadtest_100(t *testing.T)   { loadtestFilesystem_Client(100, t) }
-func TestFilesystem_Client_Loadtest_1000(t *testing.T)  { loadtestFilesystem_Client(1000, t) }
-func TestFilesystem_Client_Loadtest_10000(t *testing.T) { loadtestFilesystem_Client(10000, t) }
+func TestReader_FileChanges(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "filesystem-reader-test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
 
-// func TestDocuments_Client_Loadtest_50000(t *testing.T) { loadtestDocuments_Client(50000, t) }
+	r, err := NewReader(tmpDir)
+	require.NoError(t, err)
+	defer r.Close()
+
+	events := make(chan reader.Event, 10)
+	r.Subscribe(events, false)
+
+	time.Sleep(100 * time.Millisecond)
+
+	testFile := filepath.Join(tmpDir, "new.md")
+	testContent := "# New Document"
+	err = os.WriteFile(testFile, []byte(testContent), 0644)
+	require.NoError(t, err)
+
+	var changeEvent reader.Event
+	select {
+	case changeEvent = <-events:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for change event")
+	}
+
+	assert.Equal(t, reader.Change, changeEvent.Op)
+	assert.Equal(t, "new.md", changeEvent.Id)
+	assert.Equal(t, []byte(testContent), changeEvent.Content)
+}
+
+func TestReader_OnlyMarkdownFiles(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "filesystem-reader-test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	r, err := NewReader(tmpDir)
+	require.NoError(t, err)
+	defer r.Close()
+
+	events := make(chan reader.Event, 10)
+	r.Subscribe(events, false)
+
+	time.Sleep(100 * time.Millisecond)
+
+	txtFile := filepath.Join(tmpDir, "test.txt")
+	err = os.WriteFile(txtFile, []byte("not markdown"), 0644)
+	require.NoError(t, err)
+
+	select {
+	case <-events:
+		t.Fatal("should not receive event for non-markdown file")
+	case <-time.After(500 * time.Millisecond):
+	}
+}

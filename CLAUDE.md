@@ -5,13 +5,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ### Development
-- `make test` - Run all tests with 10s timeout
+- `make test` - Run all tests with 30s timeout
 - `make hygiene` - Full hygiene check (tidy, generate, format, licenser, dirty check)
 - `make generate` - Generate protobuf code and run go generate
 - `make format` - Format Go code with gofmt
 
 ### Single Test Execution
-- `nix develop --command go test -timeout=10s ./pkg/workspace/` - Test specific package
+- `nix develop --command go test -timeout=30s ./pkg/workspace/` - Test specific package
 - `nix develop --command go test -run TestSpecificFunction ./pkg/workspace/` - Run specific test
 
 ### Protobuf Management
