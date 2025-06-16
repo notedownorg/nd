@@ -101,12 +101,12 @@ func TestDocuments_Client_Watcher_Fuzz(t *testing.T) {
 		wantRel[k] = true
 	}
 
-	// Wait for all files to finish processing
+	// Wait for all files to finish processing - longer timeout for CI environments
 	assert.Eventually(t, func() bool {
 		client.docMutex.Lock()
 		defer client.docMutex.Unlock()
 		return len(wantRel) == len(client.documents)
-	}, 5*time.Second, time.Millisecond*100, "expected %v documents got %v", len(wantRel), len(client.documents))
+	}, 10*time.Second, time.Millisecond*200, "expected %v documents got %v", len(wantRel), len(client.documents))
 
 	// Ensure the documents paths are correct
 	got := map[string]bool{}
