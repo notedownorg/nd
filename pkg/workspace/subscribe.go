@@ -89,7 +89,7 @@ func (w *Workspace) Subscribe(ch chan Event, kind Kind, loadInitialNodes bool) i
 				w.log.Warn("subscriber goroutine panicked")
 			}
 		}()
-		
+
 		loadBuffer := make([]Event, 0, 1000)
 		for ev := range s.internal {
 
