@@ -82,13 +82,14 @@ func NewReader(name string, location string) (*Reader, error) {
 	sub := make(chan reader.Event)
 	defer client.Unsubscribe(client.Subscribe(sub, true))
 
-	// For each file we process on intial load, a load event is emitted
-	// Therefore if our subscriber has received a load event for each file we have finished the initial load
+	// Wait for the subscriber to complete its initial load
 	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
 		for ev := range sub {
-			if ev.Op == reader.Load {
+			if ev.Op == reader.SubscriberLoadComplete {
 				wg.Done()
+				return
 			}
 		}
 	}()
@@ -111,7 +112,6 @@ func NewReader(name string, location string) (*Reader, error) {
 			}
 		}
 		if strings.HasSuffix(path, ".md") {
-			wg.Add(1)
 			client.processFile(path, true, 0) // ignore clock for initial load
 		}
 		return nil
