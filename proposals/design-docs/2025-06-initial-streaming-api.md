@@ -140,7 +140,24 @@ message StreamEvent {
         Load load = 3;
         Change change = 4;
         Delete delete = 5;
+        Error error = 6;
     }
+}
+
+// Error types for streaming operations
+enum ErrorCode {
+    UNKNOWN_ERROR = 0;
+    SUBSCRIPTION_ID_CONFLICT = 1;
+    WORKSPACE_NOT_FOUND = 2;
+    INVALID_REQUEST = 3;
+    INTERNAL_ERROR = 4;
+}
+
+// Indicates an error with a request
+message Error {
+    string request_id = 1;  // Links to subscription_id or other request ID
+    ErrorCode error_code = 2;
+    string error_message = 3;
 }
 
 message SubscriptionConfirmation {

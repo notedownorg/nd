@@ -1,0 +1,313 @@
+// Copyright 2025 Notedown Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package server
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	pb "github.com/notedownorg/nd/api/go/nodes/v1alpha1"
+	"github.com/notedownorg/nd/pkg/workspace/reader/mock"
+	"google.golang.org/grpc/metadata"
+)
+
+func TestDocumentSubscription(t *testing.T) {
+	// Create a server with a mock workspace
+	server := NewServer()
+	mockReader := mock.NewReader(t)
+
+	err := server.RegisterWorkspace("test-workspace", mockReader)
+	if err != nil {
+		t.Fatalf("Failed to register workspace: %v", err)
+	}
+
+	// Create a mock stream
+	mockStream := &mockNodeServiceStreamServer{
+		events: make(chan *pb.StreamEvent, 10),
+		ctx:    context.Background(),
+	}
+
+	// Create a document subscription request
+	subscriptionReq := &pb.SubscriptionRequest{
+		SubscriptionId: "test-subscription-1",
+		Msg: &pb.SubscriptionRequest_DocumentSubscription{
+			DocumentSubscription: &pb.DocumentSubscription{
+				WorkspaceName: "test-workspace",
+			},
+		},
+	}
+
+	// Handle the subscription in a goroutine
+	go server.handleSubscriptionRequest(mockStream, subscriptionReq)
+
+	// Wait for subscription confirmation
+	select {
+	case event := <-mockStream.events:
+		if confirmation := event.GetSubscriptionConfirmation(); confirmation != nil {
+			if confirmation.SubscriptionId != "test-subscription-1" {
+				t.Errorf("Expected subscription ID 'test-subscription-1', got '%s'", confirmation.SubscriptionId)
+			}
+		} else {
+			t.Errorf("Expected subscription confirmation, got %T", event.GetEvent())
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("Timeout waiting for subscription confirmation")
+	}
+
+	// Wait a bit for the subscription to be fully set up
+	time.Sleep(10 * time.Millisecond)
+
+	// Verify subscription is active
+	server.subsMu.RLock()
+	activeSub, exists := server.subscriptions["test-subscription-1"]
+	server.subsMu.RUnlock()
+
+	if !exists {
+		t.Fatal("Expected active subscription to exist")
+	}
+
+	if activeSub.subscriptionID != "test-subscription-1" {
+		t.Errorf("Expected subscription ID 'test-subscription-1', got '%s'", activeSub.subscriptionID)
+	}
+
+	if activeSub.workspaceName != "test-workspace" {
+		t.Errorf("Expected workspace name 'test-workspace', got '%s'", activeSub.workspaceName)
+	}
+}
+
+func TestUnsubscribe(t *testing.T) {
+	server := NewServer()
+	mockReader := mock.NewReader(t)
+
+	err := server.RegisterWorkspace("test-workspace", mockReader)
+	if err != nil {
+		t.Fatalf("Failed to register workspace: %v", err)
+	}
+
+	mockStream := &mockNodeServiceStreamServer{
+		events: make(chan *pb.StreamEvent, 10),
+		ctx:    context.Background(),
+	}
+
+	// First, create a subscription
+	subscriptionReq := &pb.SubscriptionRequest{
+		SubscriptionId: "test-subscription-1",
+		Msg: &pb.SubscriptionRequest_DocumentSubscription{
+			DocumentSubscription: &pb.DocumentSubscription{
+				WorkspaceName: "test-workspace",
+			},
+		},
+	}
+
+	go server.handleSubscriptionRequest(mockStream, subscriptionReq)
+
+	// Wait for confirmation
+	<-mockStream.events
+
+	// Wait for subscription to be set up
+	time.Sleep(50 * time.Millisecond)
+
+	// Verify subscription exists
+	server.subsMu.RLock()
+	_, exists := server.subscriptions["test-subscription-1"]
+	server.subsMu.RUnlock()
+	if !exists {
+		t.Fatal("Expected subscription to exist before unsubscribe")
+	}
+
+	// Now unsubscribe
+	unsubscribeReq := &pb.SubscriptionRequest{
+		SubscriptionId: "test-subscription-1",
+		Msg: &pb.SubscriptionRequest_Unsubscribe{
+			Unsubscribe: &pb.Unsubscribe{},
+		},
+	}
+
+	server.handleSubscriptionRequest(mockStream, unsubscribeReq)
+
+	// Give it a moment to process
+	time.Sleep(10 * time.Millisecond)
+
+	// Verify subscription is removed
+	server.subsMu.RLock()
+	_, exists = server.subscriptions["test-subscription-1"]
+	server.subsMu.RUnlock()
+
+	if exists {
+		t.Fatal("Expected subscription to be removed after unsubscribe")
+	}
+}
+
+func TestSubscriptionIDConflict(t *testing.T) {
+	server := NewServer()
+	mockReader := mock.NewReader(t)
+
+	err := server.RegisterWorkspace("test-workspace", mockReader)
+	if err != nil {
+		t.Fatalf("Failed to register workspace: %v", err)
+	}
+
+	mockStream := &mockNodeServiceStreamServer{
+		events: make(chan *pb.StreamEvent, 10),
+		ctx:    context.Background(),
+	}
+
+	// Create first subscription
+	subscriptionReq1 := &pb.SubscriptionRequest{
+		SubscriptionId: "duplicate-id",
+		Msg: &pb.SubscriptionRequest_DocumentSubscription{
+			DocumentSubscription: &pb.DocumentSubscription{
+				WorkspaceName: "test-workspace",
+			},
+		},
+	}
+
+	go server.handleSubscriptionRequest(mockStream, subscriptionReq1)
+
+	// Wait for confirmation
+	confirmEvent := <-mockStream.events
+	if confirmEvent.GetSubscriptionConfirmation() == nil {
+		t.Fatalf("Expected subscription confirmation, got %T", confirmEvent.GetEvent())
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	// Try to create second subscription with same ID
+	subscriptionReq2 := &pb.SubscriptionRequest{
+		SubscriptionId: "duplicate-id",
+		Msg: &pb.SubscriptionRequest_DocumentSubscription{
+			DocumentSubscription: &pb.DocumentSubscription{
+				WorkspaceName: "test-workspace",
+			},
+		},
+	}
+
+	go server.handleSubscriptionRequest(mockStream, subscriptionReq2)
+
+	// Wait for error event (might need to drain other events first)
+	var errorReceived bool
+	for i := 0; i < 3; i++ { // Try up to 3 events
+		select {
+		case event := <-mockStream.events:
+			if errorEvent := event.GetError(); errorEvent != nil {
+				if errorEvent.RequestId != "duplicate-id" {
+					t.Errorf("Expected request ID 'duplicate-id', got '%s'", errorEvent.RequestId)
+				}
+				if errorEvent.ErrorCode != pb.ErrorCode_SUBSCRIPTION_ID_CONFLICT {
+					t.Errorf("Expected error code SUBSCRIPTION_ID_CONFLICT, got %v", errorEvent.ErrorCode)
+				}
+				if errorEvent.ErrorMessage != "subscription ID already exists" {
+					t.Errorf("Expected error message 'subscription ID already exists', got '%s'", errorEvent.ErrorMessage)
+				}
+				errorReceived = true
+				break
+			}
+			// Continue to next event if this wasn't an error
+		case <-time.After(500 * time.Millisecond):
+			break // Try next iteration
+		}
+		if errorReceived {
+			break
+		}
+	}
+
+	if !errorReceived {
+		t.Fatal("Did not receive expected error event")
+	}
+}
+
+func TestWorkspaceNotFound(t *testing.T) {
+	server := NewServer()
+
+	mockStream := &mockNodeServiceStreamServer{
+		events: make(chan *pb.StreamEvent, 10),
+		ctx:    context.Background(),
+	}
+
+	// Try to subscribe to non-existent workspace
+	subscriptionReq := &pb.SubscriptionRequest{
+		SubscriptionId: "test-subscription",
+		Msg: &pb.SubscriptionRequest_DocumentSubscription{
+			DocumentSubscription: &pb.DocumentSubscription{
+				WorkspaceName: "non-existent-workspace",
+			},
+		},
+	}
+
+	go server.handleSubscriptionRequest(mockStream, subscriptionReq)
+
+	// Wait for error event
+	select {
+	case event := <-mockStream.events:
+		if errorEvent := event.GetError(); errorEvent != nil {
+			if errorEvent.RequestId != "test-subscription" {
+				t.Errorf("Expected request ID 'test-subscription', got '%s'", errorEvent.RequestId)
+			}
+			if errorEvent.ErrorCode != pb.ErrorCode_WORKSPACE_NOT_FOUND {
+				t.Errorf("Expected error code WORKSPACE_NOT_FOUND, got %v", errorEvent.ErrorCode)
+			}
+			if errorEvent.ErrorMessage != "workspace not found" {
+				t.Errorf("Expected error message 'workspace not found', got '%s'", errorEvent.ErrorMessage)
+			}
+		} else {
+			t.Errorf("Expected error event, got %T", event.GetEvent())
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("Timeout waiting for error event")
+	}
+}
+
+// Mock implementation for testing
+type mockNodeServiceStreamServer struct {
+	events chan *pb.StreamEvent
+	ctx    context.Context
+}
+
+func (m *mockNodeServiceStreamServer) Send(event *pb.StreamEvent) error {
+	select {
+	case m.events <- event:
+		return nil
+	default:
+		return nil // Drop if channel is full
+	}
+}
+
+func (m *mockNodeServiceStreamServer) Recv() (*pb.StreamRequest, error) {
+	// Not used in these tests
+	return nil, nil
+}
+
+func (m *mockNodeServiceStreamServer) Context() context.Context {
+	return m.ctx
+}
+
+func (m *mockNodeServiceStreamServer) SendMsg(interface{}) error {
+	return nil
+}
+
+func (m *mockNodeServiceStreamServer) RecvMsg(interface{}) error {
+	return nil
+}
+
+func (m *mockNodeServiceStreamServer) SendHeader(metadata.MD) error {
+	return nil
+}
+
+func (m *mockNodeServiceStreamServer) SetHeader(metadata.MD) error {
+	return nil
+}
+
+func (m *mockNodeServiceStreamServer) SetTrailer(metadata.MD) {
+}
