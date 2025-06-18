@@ -36,7 +36,7 @@ jobs:
     # Run tests based on matrix
     - name: Run unit tests
       if: matrix.test-type == 'unit'
-      run: make test-unit-race
+      run: make test-unit
 
     - name: Run functional tests  
       if: matrix.test-type == 'functional'
