@@ -161,3 +161,149 @@ func TestDocument_Markdown(t *testing.T) {
 		})
 	}
 }
+
+func TestDocument_GetMetadata(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata map[string]any
+		expected map[string]interface{}
+	}{
+		{
+			name:     "nil metadata",
+			metadata: nil,
+			expected: nil,
+		},
+		{
+			name:     "empty map metadata",
+			metadata: map[string]any{},
+			expected: map[string]interface{}{},
+		},
+		{
+			name: "simple key-value pairs",
+			metadata: map[string]any{
+				"title":  "Test Document", 
+				"author": "John Doe",
+			},
+			expected: map[string]interface{}{
+				"title":  "Test Document",
+				"author": "John Doe",
+			},
+		},
+		{
+			name: "array values",
+			metadata: map[string]any{
+				"tags": []string{"test", "document", "metadata"},
+			},
+			expected: map[string]interface{}{
+				"tags": []interface{}{"test", "document", "metadata"},
+			},
+		},
+		{
+			name: "nested maps",
+			metadata: map[string]any{
+				"metadata": map[string]any{
+					"created": "2025-01-01",
+					"updated": "2025-01-02",
+				},
+			},
+			expected: map[string]interface{}{
+				"metadata": map[string]interface{}{
+					"created": "2025-01-01",
+					"updated": "2025-01-02",
+				},
+			},
+		},
+		{
+			name: "mixed types",
+			metadata: map[string]any{
+				"title":     "Mixed Types",
+				"published": true,
+				"views":     42,
+				"rating":    4.5,
+				"tags":      []string{"test"},
+			},
+			expected: map[string]interface{}{
+				"title":     "Mixed Types",
+				"published": true,
+				"views":     42,
+				"rating":    4.5,
+				"tags":      []interface{}{"test"},
+			},
+		},
+		{
+			name: "null values",
+			metadata: map[string]any{
+				"nullField": nil,
+				"title":     "Document with null",
+			},
+			expected: map[string]interface{}{
+				"nullField": nil,
+				"title":     "Document with null",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create document
+			doc := NewDocument("test.md")
+
+			// Set metadata if provided
+			if tt.metadata != nil {
+				var node yaml.Node
+				err := node.Encode(tt.metadata)
+				assert.NoError(t, err)
+				doc.SetMetadata(&node)
+			}
+
+			// Test the GetMetadata method
+			result := doc.GetMetadata()
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestDocument_GetMetadata_Consistency(t *testing.T) {
+	// Test that GetMetadata returns data that can round-trip through SetMetadata
+	originalData := map[string]any{
+		"title":     "Test Document",
+		"author":    "Test Author",
+		"tags":      []string{"test", "metadata"},
+		"priority":  1,
+		"published": true,
+		"config": map[string]any{
+			"enabled": true,
+			"value":   42,
+		},
+	}
+
+	// Create document and set metadata
+	doc := NewDocument("test.md")
+	var node yaml.Node
+	err := node.Encode(originalData)
+	assert.NoError(t, err)
+	doc.SetMetadata(&node)
+
+	// Get metadata back
+	retrievedData := doc.GetMetadata()
+	assert.NotNil(t, retrievedData)
+
+	// Check individual fields (accounting for type differences in arrays/maps)
+	assert.Equal(t, "Test Document", retrievedData["title"])
+	assert.Equal(t, "Test Author", retrievedData["author"])
+	assert.Equal(t, 1, retrievedData["priority"])
+	assert.Equal(t, true, retrievedData["published"])
+
+	// Check arrays (interface{} vs string slice)
+	tags, ok := retrievedData["tags"].([]interface{})
+	assert.True(t, ok)
+	assert.Len(t, tags, 2)
+	assert.Equal(t, "test", tags[0])
+	assert.Equal(t, "metadata", tags[1])
+
+	// Check nested maps
+	config, ok := retrievedData["config"].(map[string]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, true, config["enabled"])
+	assert.Equal(t, 42, config["value"])
+}

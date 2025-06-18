@@ -36,38 +36,19 @@ func TestStream_DocumentSubscription(t *testing.T) {
 	defer cancel()
 
 	// Subscribe to documents
-	subscriptionReq := &pb.StreamRequest{
-		Request: &pb.StreamRequest_Subscription{
-			Subscription: &pb.SubscriptionRequest{
-				SubscriptionId: "test-sub-1",
-				Msg: &pb.SubscriptionRequest_DocumentSubscription{
-					DocumentSubscription: &pb.DocumentSubscription{},
-				},
-			},
-		},
-	}
-
-	err := stream.Send(subscriptionReq)
-	require.NoError(t, err)
-
-	// Expect subscription confirmation
-	confirmEvent := harness.expectStreamEvent(stream, "subscription_confirmation", 5*time.Second)
-	assert.Equal(t, "test-sub-1", confirmEvent.GetSubscriptionConfirmation().SubscriptionId)
-
-	// Expect initialization complete
-	harness.expectStreamEvent(stream, "initialization_complete", 5*time.Second)
+	harness.subscribeToDocuments(stream, "test-sub-1")
 
 	// Create a test file
 	filename := fmt.Sprintf("%s.md", words.Random())
 	content := harness.generateRealisticContent("Test Document")
-	err = harness.createTestFile(filename, content)
+	err := harness.createTestFile(filename, content)
 	require.NoError(t, err)
 
 	// Wait for file propagation
 	time.Sleep(EventPropagationDelay)
 
 	// Expect change event
-	changeEvent := harness.expectStreamEvent(stream, "change", 5*time.Second)
+	changeEvent := harness.expectStreamEvent(stream, ChangeEvent, 5*time.Second)
 	node := changeEvent.GetChange().GetNode()
 	if doc := node.GetDocument(); doc != nil {
 		expectedID := fmt.Sprintf("Document|%s", filename)
@@ -89,35 +70,19 @@ func TestStream_MultipleDocumentOperations(t *testing.T) {
 	defer cancel()
 
 	// Subscribe to documents
-	subscriptionReq := &pb.StreamRequest{
-		Request: &pb.StreamRequest_Subscription{
-			Subscription: &pb.SubscriptionRequest{
-				SubscriptionId: "test-multi-ops",
-				Msg: &pb.SubscriptionRequest_DocumentSubscription{
-					DocumentSubscription: &pb.DocumentSubscription{},
-				},
-			},
-		},
-	}
-
-	err := stream.Send(subscriptionReq)
-	require.NoError(t, err)
-
-	// Expect subscription confirmation and initialization
-	harness.expectStreamEvent(stream, "subscription_confirmation", 5*time.Second)
-	harness.expectStreamEvent(stream, "initialization_complete", 5*time.Second)
+	harness.subscribeToDocuments(stream, "test-multi-ops")
 
 	// Test sequence: Create → Update → Delete
 	filename := fmt.Sprintf("%s-%s.md", words.Random(), words.Random())
 
 	// Step 1: Create file
 	initialContent := harness.generateRealisticContent("Initial Title")
-	err = harness.createTestFile(filename, initialContent)
+	err := harness.createTestFile(filename, initialContent)
 	require.NoError(t, err)
 	time.Sleep(EventPropagationDelay)
 
 	// Expect change event for creation
-	createEvent := harness.expectStreamEvent(stream, "change", 5*time.Second)
+	createEvent := harness.expectStreamEvent(stream, ChangeEvent, 5*time.Second)
 	node := createEvent.GetChange().GetNode()
 	if doc := node.GetDocument(); doc != nil {
 		expectedID := fmt.Sprintf("Document|%s", filename)
@@ -133,7 +98,7 @@ func TestStream_MultipleDocumentOperations(t *testing.T) {
 	time.Sleep(EventPropagationDelay)
 
 	// Expect change event for update
-	updateEvent := harness.expectStreamEvent(stream, "change", 5*time.Second)
+	updateEvent := harness.expectStreamEvent(stream, ChangeEvent, 5*time.Second)
 	updateNode := updateEvent.GetChange().GetNode()
 	if doc := updateNode.GetDocument(); doc != nil {
 		expectedID := fmt.Sprintf("Document|%s", filename)
@@ -148,7 +113,7 @@ func TestStream_MultipleDocumentOperations(t *testing.T) {
 	time.Sleep(EventPropagationDelay)
 
 	// Expect delete event
-	deleteEvent := harness.expectStreamEvent(stream, "delete", 5*time.Second)
+	deleteEvent := harness.expectStreamEvent(stream, DeleteEvent, 5*time.Second)
 	deleteNode := deleteEvent.GetDelete().GetNode()
 	if doc := deleteNode.GetDocument(); doc != nil {
 		expectedID := fmt.Sprintf("Document|%s", filename)
@@ -172,23 +137,7 @@ func TestStream_ConcurrentSubscriptions(t *testing.T) {
 
 	// Subscribe both streams to documents
 	for i, stream := range []pb.NodeService_StreamClient{stream1, stream2} {
-		subscriptionReq := &pb.StreamRequest{
-			Request: &pb.StreamRequest_Subscription{
-				Subscription: &pb.SubscriptionRequest{
-					SubscriptionId: fmt.Sprintf("concurrent-sub-%d", i+1),
-					Msg: &pb.SubscriptionRequest_DocumentSubscription{
-						DocumentSubscription: &pb.DocumentSubscription{},
-					},
-				},
-			},
-		}
-
-		err := stream.Send(subscriptionReq)
-		require.NoError(t, err)
-
-		// Expect subscription confirmation and initialization
-		harness.expectStreamEvent(stream, "subscription_confirmation", 5*time.Second)
-		harness.expectStreamEvent(stream, "initialization_complete", 5*time.Second)
+		harness.subscribeToDocuments(stream, fmt.Sprintf("concurrent-sub-%d", i+1))
 	}
 
 	// Create a test file
@@ -202,7 +151,7 @@ func TestStream_ConcurrentSubscriptions(t *testing.T) {
 
 	// Both streams should receive the change event
 	for i, stream := range []pb.NodeService_StreamClient{stream1, stream2} {
-		changeEvent := harness.expectStreamEvent(stream, "change", 5*time.Second)
+		changeEvent := harness.expectStreamEvent(stream, ChangeEvent, 5*time.Second)
 		node := changeEvent.GetChange().GetNode()
 		if doc := node.GetDocument(); doc != nil {
 			expectedID := fmt.Sprintf("Document|%s", filename)
@@ -327,7 +276,7 @@ func TestStream_NestedDirectories(t *testing.T) {
 		time.Sleep(EventPropagationDelay)
 
 		// Expect change event
-		changeEvent := harness.expectStreamEvent(stream, "change", 5*time.Second)
+		changeEvent := harness.expectStreamEvent(stream, ChangeEvent, 5*time.Second)
 		node := changeEvent.GetChange().GetNode()
 		if doc := node.GetDocument(); doc != nil {
 			expectedID := fmt.Sprintf("Document|%s", filename)
@@ -388,7 +337,7 @@ This is a test document with frontmatter.
 	time.Sleep(EventPropagationDelay)
 
 	// Expect change event
-	changeEvent := harness.expectStreamEvent(stream, "change", 5*time.Second)
+	changeEvent := harness.expectStreamEvent(stream, ChangeEvent, 5*time.Second)
 	node := changeEvent.GetChange().GetNode()
 	require.NotNil(t, node, "Change event should contain a node")
 
@@ -485,7 +434,7 @@ Just plain markdown content.
 	time.Sleep(EventPropagationDelay)
 
 	// Expect change event
-	changeEvent := harness.expectStreamEvent(stream, "change", 5*time.Second)
+	changeEvent := harness.expectStreamEvent(stream, ChangeEvent, 5*time.Second)
 	node := changeEvent.GetChange().GetNode()
 	require.NotNil(t, node, "Change event should contain a node")
 
@@ -557,7 +506,7 @@ This document tests complex frontmatter parsing.
 	time.Sleep(EventPropagationDelay)
 
 	// Expect change event
-	changeEvent := harness.expectStreamEvent(stream, "change", 5*time.Second)
+	changeEvent := harness.expectStreamEvent(stream, ChangeEvent, 5*time.Second)
 	node := changeEvent.GetChange().GetNode()
 	require.NotNil(t, node, "Change event should contain a node")
 

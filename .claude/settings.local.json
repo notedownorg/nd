@@ -5,7 +5,9 @@
       "Bash(gh pr create:*)",
       "Bash(gh pr view:*)",
       "Bash(gh api:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(git commit:*)",
+      "Bash(grep:*)"
     ],
     "deny": []
   }

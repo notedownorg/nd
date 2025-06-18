@@ -35,6 +35,7 @@ type BranchNode interface {
 	AddChild(Node)
 	RemoveChild(Node)
 	DepthFirstSearch(func(Node))
+	DirectChildren() []Node
 }
 
 type node struct {

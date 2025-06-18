@@ -89,12 +89,10 @@ func (s *Server) convertNodeToPB(n node.Node) (*pb.Node, error) {
 			Workspace: "", // TODO: Get workspace name from context
 		}
 
-		// Convert children IDs
-		typedNode.DepthFirstSearch(func(child node.Node) {
-			if child != typedNode { // Don't include self
-				pbDoc.Children = append(pbDoc.Children, child.ID())
-			}
-		})
+		// Convert direct children IDs only
+		for _, child := range typedNode.DirectChildren() {
+			pbDoc.Children = append(pbDoc.Children, child.ID())
+		}
 
 		// Convert metadata from document frontmatter
 		pbDoc.Metadata = s.convertMetadataToPB(typedNode)

@@ -43,6 +43,18 @@ const (
 	EventPropagationDelay      = 500 * time.Millisecond
 )
 
+// EventType represents expected stream event types
+type EventType string
+
+const (
+	SubscriptionConfirmationEvent EventType = "subscription_confirmation"
+	InitializationCompleteEvent   EventType = "initialization_complete"
+	LoadEvent                     EventType = "load"
+	ChangeEvent                   EventType = "change"
+	DeleteEvent                   EventType = "delete"
+	ErrorEvent                    EventType = "error"
+)
+
 // testHarness manages the server process and gRPC client for functional tests
 type testHarness struct {
 	t         *testing.T
@@ -210,7 +222,7 @@ func (h *testHarness) streamWithTimeout(timeout time.Duration) (pb.NodeService_S
 }
 
 // expectStreamEvent waits for a specific event type with timeout
-func (h *testHarness) expectStreamEvent(stream pb.NodeService_StreamClient, expectedEventType string, timeout time.Duration) *pb.StreamEvent {
+func (h *testHarness) expectStreamEvent(stream pb.NodeService_StreamClient, expectedEventType EventType, timeout time.Duration) *pb.StreamEvent {
 	done := make(chan *pb.StreamEvent, 1)
 	errorChan := make(chan error, 1)
 
@@ -226,17 +238,17 @@ func (h *testHarness) expectStreamEvent(stream pb.NodeService_StreamClient, expe
 	select {
 	case event := <-done:
 		switch expectedEventType {
-		case "subscription_confirmation":
+		case SubscriptionConfirmationEvent:
 			assert.NotNil(h.t, event.GetSubscriptionConfirmation(), "Expected subscription confirmation event")
-		case "initialization_complete":
+		case InitializationCompleteEvent:
 			assert.NotNil(h.t, event.GetInitializationComplete(), "Expected initialization complete event")
-		case "load":
+		case LoadEvent:
 			assert.NotNil(h.t, event.GetLoad(), "Expected load event")
-		case "change":
+		case ChangeEvent:
 			assert.NotNil(h.t, event.GetChange(), "Expected change event")
-		case "delete":
+		case DeleteEvent:
 			assert.NotNil(h.t, event.GetDelete(), "Expected delete event")
-		case "error":
+		case ErrorEvent:
 			assert.NotNil(h.t, event.GetError(), "Expected error event")
 		}
 		return event
@@ -246,6 +258,30 @@ func (h *testHarness) expectStreamEvent(stream pb.NodeService_StreamClient, expe
 		h.t.Fatalf("Timeout waiting for %s event", expectedEventType)
 	}
 	return nil
+}
+
+// subscribeToDocuments creates a document subscription and waits for confirmation
+func (h *testHarness) subscribeToDocuments(stream pb.NodeService_StreamClient, subscriptionID string) {
+	subscriptionReq := &pb.StreamRequest{
+		Request: &pb.StreamRequest_Subscription{
+			Subscription: &pb.SubscriptionRequest{
+				SubscriptionId: subscriptionID,
+				Msg: &pb.SubscriptionRequest_DocumentSubscription{
+					DocumentSubscription: &pb.DocumentSubscription{},
+				},
+			},
+		},
+	}
+
+	err := stream.Send(subscriptionReq)
+	require.NoError(h.t, err, "Failed to send subscription request")
+
+	// Wait for subscription confirmation
+	confirmEvent := h.expectStreamEvent(stream, SubscriptionConfirmationEvent, 5*time.Second)
+	assert.Equal(h.t, subscriptionID, confirmEvent.GetSubscriptionConfirmation().SubscriptionId)
+
+	// Wait for initialization complete
+	h.expectStreamEvent(stream, InitializationCompleteEvent, 5*time.Second)
 }
 
 // drainStreamEvents collects all pending events from the stream

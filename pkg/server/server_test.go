@@ -21,7 +21,6 @@ import (
 
 	pb "github.com/notedownorg/nd/api/go/nodes/v1alpha1"
 	"github.com/notedownorg/nd/pkg/workspace/reader/mock"
-	"google.golang.org/grpc/metadata"
 )
 
 func TestDocumentSubscription(t *testing.T) {
@@ -124,16 +123,7 @@ func TestUnsubscribe(t *testing.T) {
 
 	// Test functionality: try to subscribe with the same ID again
 	// If unsubscribe worked, this should succeed without conflict
-	subscriptionReq2 := &pb.SubscriptionRequest{
-		SubscriptionId: "test-subscription-1",
-		Msg: &pb.SubscriptionRequest_DocumentSubscription{
-			DocumentSubscription: &pb.DocumentSubscription{
-				WorkspaceName: "test-workspace",
-			},
-		},
-	}
-
-	go server.handleSubscriptionRequest(mockStream, subscriptionReq2)
+	go server.handleSubscriptionRequest(mockStream, subscriptionReq)
 
 	// If unsubscribe worked properly, we should get a confirmation, not an error
 	waitForSubscriptionConfirmation(t, mockStream, "test-subscription-1")
@@ -173,16 +163,7 @@ func TestSubscriptionIDConflict(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Try to create second subscription with same ID
-	subscriptionReq2 := &pb.SubscriptionRequest{
-		SubscriptionId: "duplicate-id",
-		Msg: &pb.SubscriptionRequest_DocumentSubscription{
-			DocumentSubscription: &pb.DocumentSubscription{
-				WorkspaceName: "test-workspace",
-			},
-		},
-	}
-
-	go server.handleSubscriptionRequest(mockStream, subscriptionReq2)
+	go server.handleSubscriptionRequest(mockStream, subscriptionReq1)
 
 	// Wait for error event (might need to drain other events first)
 	var errorReceived bool
@@ -238,49 +219,6 @@ func TestWorkspaceNotFound(t *testing.T) {
 
 	// Wait for error event using helper
 	waitForErrorEvent(t, mockStream, "test-subscription", pb.ErrorCode_WORKSPACE_NOT_FOUND, "workspace not found")
-}
-
-// Mock implementation for testing
-type mockNodeServiceStreamServer struct {
-	events chan *pb.StreamEvent
-	ctx    context.Context
-}
-
-func (m *mockNodeServiceStreamServer) Send(event *pb.StreamEvent) error {
-	select {
-	case m.events <- event:
-		return nil
-	default:
-		return nil // Drop if channel is full
-	}
-}
-
-func (m *mockNodeServiceStreamServer) Recv() (*pb.StreamRequest, error) {
-	// Not used in these tests
-	return nil, nil
-}
-
-func (m *mockNodeServiceStreamServer) Context() context.Context {
-	return m.ctx
-}
-
-func (m *mockNodeServiceStreamServer) SendMsg(interface{}) error {
-	return nil
-}
-
-func (m *mockNodeServiceStreamServer) RecvMsg(interface{}) error {
-	return nil
-}
-
-func (m *mockNodeServiceStreamServer) SendHeader(metadata.MD) error {
-	return nil
-}
-
-func (m *mockNodeServiceStreamServer) SetHeader(metadata.MD) error {
-	return nil
-}
-
-func (m *mockNodeServiceStreamServer) SetTrailer(metadata.MD) {
 }
 
 // Test helper functions
