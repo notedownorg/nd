@@ -105,8 +105,8 @@ func TestUnsubscribe(t *testing.T) {
 	// Wait for confirmation using helper
 	waitForSubscriptionConfirmation(t, mockStream, "test-subscription-1")
 
-	// Wait for subscription to be set up
-	time.Sleep(50 * time.Millisecond)
+	// Wait for subscription to be set up (longer to avoid race condition)
+	time.Sleep(100 * time.Millisecond)
 
 	// Now unsubscribe
 	unsubscribeReq := &pb.SubscriptionRequest{
