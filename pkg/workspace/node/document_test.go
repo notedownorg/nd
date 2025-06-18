@@ -23,19 +23,22 @@ import (
 
 func TestDocument_Markdown(t *testing.T) {
 	tests := []struct {
-		name     string
-		metadata map[string]any
-		expected string
+		name             string
+		metadata         map[string]any
+		expectedMarkdown string
+		expectedMetadata map[string]interface{}
 	}{
 		{
-			name:     "nil metadata",
-			metadata: nil,
-			expected: "",
+			name:             "nil metadata",
+			metadata:         nil,
+			expectedMarkdown: "",
+			expectedMetadata: nil,
 		},
 		{
-			name:     "empty map metadata",
-			metadata: map[string]any{},
-			expected: "---\n---\n",
+			name:             "empty map metadata",
+			metadata:         map[string]any{},
+			expectedMarkdown: "---\n---\n",
+			expectedMetadata: map[string]interface{}{},
 		},
 		{
 			name: "simple key-value pairs",
@@ -43,21 +46,31 @@ func TestDocument_Markdown(t *testing.T) {
 				"title":  "Test Document",
 				"author": "John Doe",
 			},
-			expected: "---\nauthor: John Doe\ntitle: Test Document\n---\n",
+			expectedMarkdown: "---\nauthor: John Doe\ntitle: Test Document\n---\n",
+			expectedMetadata: map[string]interface{}{
+				"title":  "Test Document",
+				"author": "John Doe",
+			},
 		},
 		{
 			name: "array values",
 			metadata: map[string]any{
 				"tags": []string{"test", "document", "metadata"},
 			},
-			expected: "---\ntags:\n    - test\n    - document\n    - metadata\n---\n",
+			expectedMarkdown: "---\ntags:\n    - test\n    - document\n    - metadata\n---\n",
+			expectedMetadata: map[string]interface{}{
+				"tags": []interface{}{"test", "document", "metadata"},
+			},
 		},
 		{
 			name: "empty array",
 			metadata: map[string]any{
 				"tags": []string{},
 			},
-			expected: "---\ntags: []\n---\n",
+			expectedMarkdown: "---\ntags: []\n---\n",
+			expectedMetadata: map[string]interface{}{
+				"tags": []interface{}{},
+			},
 		},
 		{
 			name: "nested maps",
@@ -67,7 +80,13 @@ func TestDocument_Markdown(t *testing.T) {
 					"updated": "2025-01-02",
 				},
 			},
-			expected: "---\nmetadata:\n    created: \"2025-01-01\"\n    updated: \"2025-01-02\"\n---\n",
+			expectedMarkdown: "---\nmetadata:\n    created: \"2025-01-01\"\n    updated: \"2025-01-02\"\n---\n",
+			expectedMetadata: map[string]interface{}{
+				"metadata": map[string]interface{}{
+					"created": "2025-01-01",
+					"updated": "2025-01-02",
+				},
+			},
 		},
 		{
 			name: "mixed types",
@@ -82,7 +101,18 @@ func TestDocument_Markdown(t *testing.T) {
 					"email": "john@example.com",
 				},
 			},
-			expected: "---\nauthor:\n    email: john@example.com\n    name: John Doe\npublished: true\nrating: 4.5\ntags:\n    - test\ntitle: Mixed Types\nviews: 42\n---\n",
+			expectedMarkdown: "---\nauthor:\n    email: john@example.com\n    name: John Doe\npublished: true\nrating: 4.5\ntags:\n    - test\ntitle: Mixed Types\nviews: 42\n---\n",
+			expectedMetadata: map[string]interface{}{
+				"title":     "Mixed Types",
+				"published": true,
+				"views":     42,
+				"rating":    4.5,
+				"tags":      []interface{}{"test"},
+				"author": map[string]interface{}{
+					"name":  "John Doe",
+					"email": "john@example.com",
+				},
+			},
 		},
 		{
 			name: "special characters",
@@ -90,7 +120,11 @@ func TestDocument_Markdown(t *testing.T) {
 				"title":       "Special: Characters!",
 				"description": "Contains: colons, \"quotes\", 'apostrophes', #hashtags, @mentions",
 			},
-			expected: "---\ndescription: 'Contains: colons, \"quotes\", ''apostrophes'', #hashtags, @mentions'\ntitle: 'Special: Characters!'\n---\n",
+			expectedMarkdown: "---\ndescription: 'Contains: colons, \"quotes\", ''apostrophes'', #hashtags, @mentions'\ntitle: 'Special: Characters!'\n---\n",
+			expectedMetadata: map[string]interface{}{
+				"title":       "Special: Characters!",
+				"description": "Contains: colons, \"quotes\", 'apostrophes', #hashtags, @mentions",
+			},
 		},
 		{
 			name: "empty strings",
@@ -98,14 +132,21 @@ func TestDocument_Markdown(t *testing.T) {
 				"title": "",
 				"desc":  "   ",
 			},
-			expected: "---\ndesc: '   '\ntitle: \"\"\n---\n",
+			expectedMarkdown: "---\ndesc: '   '\ntitle: \"\"\n---\n",
+			expectedMetadata: map[string]interface{}{
+				"title": "",
+				"desc":  "   ",
+			},
 		},
 		{
 			name: "array with mixed types",
 			metadata: map[string]any{
 				"mixed": []any{42, "string", true, 3.14},
 			},
-			expected: "---\nmixed:\n    - 42\n    - string\n    - true\n    - 3.14\n---\n",
+			expectedMarkdown: "---\nmixed:\n    - 42\n    - string\n    - true\n    - 3.14\n---\n",
+			expectedMetadata: map[string]interface{}{
+				"mixed": []interface{}{42, "string", true, 3.14},
+			},
 		},
 		{
 			name: "deeply nested structure",
@@ -122,7 +163,20 @@ func TestDocument_Markdown(t *testing.T) {
 					},
 				},
 			},
-			expected: "---\nlevel1:\n    level2:\n        level3:\n            array:\n                - key: value\n---\n",
+			expectedMarkdown: "---\nlevel1:\n    level2:\n        level3:\n            array:\n                - key: value\n---\n",
+			expectedMetadata: map[string]interface{}{
+				"level1": map[string]interface{}{
+					"level2": map[string]interface{}{
+						"level3": map[string]interface{}{
+							"array": []interface{}{
+								map[string]interface{}{
+									"key": "value",
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 		{
 			name: "null values",
@@ -130,7 +184,37 @@ func TestDocument_Markdown(t *testing.T) {
 				"nullField": nil,
 				"title":     "Document with null",
 			},
-			expected: "---\nnullField: null\ntitle: Document with null\n---\n",
+			expectedMarkdown: "---\nnullField: null\ntitle: Document with null\n---\n",
+			expectedMetadata: map[string]interface{}{
+				"nullField": nil,
+				"title":     "Document with null",
+			},
+		},
+		{
+			name: "round-trip consistency",
+			metadata: map[string]any{
+				"title":     "Test Document",
+				"author":    "Test Author",
+				"tags":      []string{"test", "metadata"},
+				"priority":  1,
+				"published": true,
+				"config": map[string]any{
+					"enabled": true,
+					"value":   42,
+				},
+			},
+			expectedMarkdown: "---\nauthor: Test Author\nconfig:\n    enabled: true\n    value: 42\npriority: 1\npublished: true\ntags:\n    - test\n    - metadata\ntitle: Test Document\n---\n",
+			expectedMetadata: map[string]interface{}{
+				"title":     "Test Document",
+				"author":    "Test Author",
+				"tags":      []interface{}{"test", "metadata"},
+				"priority":  1,
+				"published": true,
+				"config": map[string]interface{}{
+					"enabled": true,
+					"value":   42,
+				},
+			},
 		},
 		// {
 		// 	name: "unicode + emoji characters",
@@ -156,8 +240,12 @@ func TestDocument_Markdown(t *testing.T) {
 			}
 
 			// Test the Markdown method
-			result := doc.Markdown()
-			assert.Equal(t, tt.expected, result)
+			markdownResult := doc.Markdown()
+			assert.Equal(t, tt.expectedMarkdown, markdownResult)
+
+			// Test the GetMetadata method
+			metadataResult := doc.GetMetadata()
+			assert.Equal(t, tt.expectedMetadata, metadataResult)
 		})
 	}
 }

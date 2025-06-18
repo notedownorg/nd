@@ -25,18 +25,15 @@ service NodeService {
 
 message StreamRequest {
     oneof request {
-        Subscription subscription = 1;
-        // Query query = 2;
-        // Mutation mutation = 2;
+        SubscriptionRequest subscription = 1;
     }
 }
 
-message Subscription {
+message SubscriptionRequest {
     string subscription_id = 1;
     oneof msg {
         Unsubscribe unsubscribe = 10; 
         DocumentSubscription document_subscription = 11;
-        // SectionSubscription section_subscription = 12;
     }
 }
 
@@ -46,15 +43,19 @@ message DocumentSubscription {
     string workspace_name = 1;
 }
 
-message SectionSubscription { }
-
 message StreamEvent {
     oneof event {
-        InitializationComplete initialization_complete = 1;
-        Load load = 2;
-        Change change = 3;
-        Delete delete = 4;
+        SubscriptionConfirmation subscription_confirmation = 1;
+        InitializationComplete initialization_complete = 2;
+        Load load = 3;
+        Change change = 4;
+        Delete delete = 5;
+        Error error = 6;
     }
+}
+
+message SubscriptionConfirmation {
+    string subscription_id = 1;
 }
 
 // Indicates the completion of the initialization of a subscribe request
@@ -78,5 +79,21 @@ message Change {
 message Delete {
     string subscription_id = 1;
     Node node = 2;
+}
+
+// Error types for streaming operations
+enum ErrorCode {
+    UNKNOWN_ERROR = 0;
+    SUBSCRIPTION_ID_CONFLICT = 1;
+    WORKSPACE_NOT_FOUND = 2;
+    INVALID_REQUEST = 3;
+    INTERNAL_ERROR = 4;
+}
+
+// Indicates an error with a request
+message Error {
+    string request_id = 1;  // Links to subscription_id or other request ID
+    ErrorCode error_code = 2;
+    string error_message = 3;
 }
 

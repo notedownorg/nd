@@ -5,7 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ### Development
-- `make test` - Run all tests with 30s timeout
+- `make build` - Build the nd server binary to ./bin/nd
+- `make test-all` - Run all tests (unit + functional)
+- `make test-unit` - Run unit tests only (no race detection)
+- `make test-unit-race` - Run unit tests with race detection
+- `make test-functional` - Build binary and run functional tests
 - `make hygiene` - Full hygiene check (tidy, generate, format, licenser, dirty check)
 - `make generate` - Generate protobuf code and run go generate
 - `make format` - Format Go code with gofmt
@@ -33,6 +37,7 @@ This is a gRPC server for real-time Markdown workspace graphs using a streaming-
 - Type-safe IDs with kind prefixes (e.g., "Document|filename.md")
 - Hierarchical structure: Documents contain Sections
 - Bidirectional markdown serialization preserving frontmatter
+- **YAML frontmatter parsing** with metadata extraction and streaming support
 
 **Reader Interface** (`pkg/workspace/reader/`):
 - Abstraction layer for data sources with filesystem implementation
@@ -49,7 +54,7 @@ This is a gRPC server for real-time Markdown workspace graphs using a streaming-
 1. **Event Buffering Strategy**: Per-subscriber buffering with graceful degradation
 2. **Load-Completion Ordering**: Events buffered until workspace initialization completes
 3. **Filesystem Integration**: Custom fsnotify wrapper with reorder buffer for handling out-of-order events
-4. **Markdown Processing**: Goldmark with custom frontmatter extension for YAML metadata
+4. **Markdown Processing**: Goldmark with custom frontmatter extension for YAML metadata parsing and streaming
 
 ### Test Architecture
 

@@ -21,6 +21,11 @@ jobs:
   
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test-type: [unit, functional]
+    name: ${{ matrix.test-type }} tests
     steps:
     - uses: actions/checkout@v4
     
@@ -28,4 +33,11 @@ jobs:
       with:
         github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
-    - run: make test
+    # Run tests based on matrix
+    - name: Run unit tests
+      if: matrix.test-type == 'unit'
+      run: make test-unit
+
+    - name: Run functional tests  
+      if: matrix.test-type == 'functional'
+      run: make test-functional

@@ -12,7 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Default target - run full hygiene check
 hygiene: tidy generate format licenser dirty
+
+# Available targets:
+# build         - Build the nd server binary
+# test-unit     - Run unit tests only (no race detection)
+# test-unit-race - Run unit tests with race detection  
+# test-functional - Build binary and run functional tests
+# test-all      - Run unit and functional tests
+# tidy          - Tidy go modules
+# generate      - Generate protobuf code
+# format        - Format Go code
+# licenser      - Apply license headers
+# dirty         - Check for uncommitted changes
 
 licenser:
 	nix develop --command licenser apply -r "Notedown Authors"
@@ -30,6 +43,17 @@ generate:
 dirty:
 	nix develop --command git diff --exit-code
 
-test:
-	nix develop --command go test -race -timeout=30s ./...
+build:
+	nix develop --command go build -o ./bin/nd ./cmd/nd
+
+test-unit:
+	nix develop --command go test -timeout=30s ./pkg/...
+
+test-unit-race:
+	nix develop --command go test -race -timeout=30s ./pkg/...
+
+test-functional: build
+	nix develop --command go test -timeout=60s ./tests/functional/...
+
+test-all: test-unit test-functional
 

@@ -91,6 +91,13 @@ func (n *branchNode) DepthFirstSearch(fn func(Node)) {
 	}
 }
 
+func (n *branchNode) DirectChildren() []Node {
+	// Return a copy to prevent external modification
+	children := make([]Node, len(n.children))
+	copy(children, n.children)
+	return children
+}
+
 func (n *branchNode) Markdown() string {
 	var builder strings.Builder
 	for _, child := range n.children {
