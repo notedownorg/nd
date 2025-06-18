@@ -1,10 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ls:*)",
-      "Bash(make test:*)",
-      "Bash(nix develop --command go test:*)",
-      "Bash(mkdir:*)"
+      "Bash(git add:*)"
     ],
     "deny": []
   }

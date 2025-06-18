@@ -16,14 +16,19 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	pb "github.com/notedownorg/nd/api/go/nodes/v1alpha1"
 	"github.com/notedownorg/nd/pkg/workspace"
 	"github.com/notedownorg/nd/pkg/workspace/node"
 	"github.com/notedownorg/nd/pkg/workspace/reader"
+	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
+	"gopkg.in/yaml.v3"
 )
 
 type activeSubscription struct {
@@ -117,6 +122,15 @@ func (s *Server) handleUnsubscribe(subscriptionID string) {
 
 func (s *Server) handleDocumentSubscription(ctx context.Context, stream pb.NodeService_StreamServer, subscriptionID string, docSub *pb.DocumentSubscription) {
 	workspaceName := docSub.GetWorkspaceName()
+
+	// Use default workspace if none specified
+	if workspaceName == "" {
+		// Find the first available workspace as default
+		for name := range s.workspaces {
+			workspaceName = name
+			break
+		}
+	}
 
 	s.log.Debug("handling document subscription", "subscription_id", subscriptionID, "workspace", workspaceName)
 
@@ -238,9 +252,14 @@ func (s *Server) convertWorkspaceEventToStreamEvent(subscriptionID string, event
 		}, nil
 
 	case workspace.Delete:
-		pbNode, err := s.convertNodeToPB(event.Node)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert node to protobuf: %w", err)
+		// For delete events, create a minimal node with just the ID
+		// The event.Node is nil for delete events, so we construct a minimal protobuf node
+		pbNode := &pb.Node{
+			Node: &pb.Node_Document{
+				Document: &pb.Document{
+					Id: event.Id,
+				},
+			},
 		}
 		return &pb.StreamEvent{
 			Event: &pb.StreamEvent_Delete{
@@ -280,10 +299,8 @@ func (s *Server) convertNodeToPB(n node.Node) (*pb.Node, error) {
 			}
 		})
 
-		// Convert metadata if available
-		// For now, we'll leave metadata empty as we need to implement
-		// the metadata extraction from the document
-		// TODO: Extract metadata from document frontmatter
+		// Convert metadata from document frontmatter
+		pbDoc.Metadata = s.convertMetadataToPB(typedNode)
 
 		return &pb.Node{
 			Node: &pb.Node_Document{
@@ -307,6 +324,77 @@ func (s *Server) convertNodeToPB(n node.Node) (*pb.Node, error) {
 
 	default:
 		return nil, fmt.Errorf("unknown node type: %T", n)
+	}
+}
+
+func (s *Server) convertMetadataToPB(doc *node.Document) []*pb.Document_MetadataEntry {
+	// Access the metadata from the document
+	// We need to use reflection or find a getter method for the metadata
+	// For now, let's try to access it through the Markdown() output and parse it
+	
+	markdown := doc.Markdown()
+	if !strings.HasPrefix(markdown, "---\n") {
+		return nil // No frontmatter
+	}
+	
+	// Find the end of the frontmatter
+	endIndex := strings.Index(markdown[4:], "\n---\n")
+	if endIndex == -1 {
+		return nil // Invalid frontmatter
+	}
+	
+	yamlContent := markdown[4 : 4+endIndex]
+	if strings.TrimSpace(yamlContent) == "" {
+		return nil // Empty frontmatter
+	}
+	
+	// Parse the YAML content
+	var metadata map[string]interface{}
+	if err := yaml.Unmarshal([]byte(yamlContent), &metadata); err != nil {
+		s.log.Error("failed to parse frontmatter", "error", err)
+		return nil
+	}
+	
+	// Convert to protobuf metadata entries
+	var entries []*pb.Document_MetadataEntry
+	for key, value := range metadata {
+		entry := &pb.Document_MetadataEntry{
+			Key: key,
+		}
+		
+		// Convert value to protobuf Any
+		if anyValue, err := s.convertValueToAny(value); err == nil {
+			entry.Value = anyValue
+		} else {
+			s.log.Error("failed to convert metadata value", "key", key, "error", err)
+		}
+		
+		entries = append(entries, entry)
+	}
+	
+	return entries
+}
+
+func (s *Server) convertValueToAny(value interface{}) (*anypb.Any, error) {
+	// Convert common types to protobuf Any
+	switch v := value.(type) {
+	case string:
+		return anypb.New(&wrapperspb.StringValue{Value: v})
+	case int:
+		return anypb.New(&wrapperspb.Int64Value{Value: int64(v)})
+	case int64:
+		return anypb.New(&wrapperspb.Int64Value{Value: v})
+	case float64:
+		return anypb.New(&wrapperspb.DoubleValue{Value: v})
+	case bool:
+		return anypb.New(&wrapperspb.BoolValue{Value: v})
+	default:
+		// For complex types, convert to JSON string
+		jsonBytes, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		return anypb.New(&wrapperspb.StringValue{Value: string(jsonBytes)})
 	}
 }
 
