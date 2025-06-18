@@ -226,7 +226,7 @@ func TestWorkspaceNotFound(t *testing.T) {
 // waitForSubscriptionConfirmation waits for and validates a subscription confirmation event
 func waitForSubscriptionConfirmation(t *testing.T, mockStream *mockNodeServiceStreamServer, expectedSubscriptionID string) {
 	t.Helper()
-	
+
 	// We might get either confirmation first or initialization complete first
 	// Try to get the confirmation within the first two events
 	for i := 0; i < 2; i++ {
@@ -243,7 +243,7 @@ func waitForSubscriptionConfirmation(t *testing.T, mockStream *mockNodeServiceSt
 			t.Fatal("Timeout waiting for subscription confirmation")
 		}
 	}
-	
+
 	t.Fatal("Did not receive subscription confirmation within expected events")
 }
 

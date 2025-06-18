@@ -80,7 +80,6 @@ func (s *Server) Stream(stream pb.NodeService_StreamServer) error {
 	}
 }
 
-
 func (s *Server) convertNodeToPB(n node.Node) (*pb.Node, error) {
 	switch typedNode := n.(type) {
 	case *node.Document:
@@ -128,24 +127,24 @@ func (s *Server) convertMetadataToPB(doc *node.Document) []*pb.Document_Metadata
 	if metadata == nil {
 		return nil
 	}
-	
+
 	// Convert to protobuf metadata entries
 	var entries []*pb.Document_MetadataEntry
 	for key, value := range metadata {
 		entry := &pb.Document_MetadataEntry{
 			Key: key,
 		}
-		
+
 		// Convert value to protobuf Any
 		if anyValue, err := s.convertValueToAny(value); err == nil {
 			entry.Value = anyValue
 		} else {
 			s.log.Error("failed to convert metadata value", "key", key, "error", err)
 		}
-		
+
 		entries = append(entries, entry)
 	}
-	
+
 	return entries
 }
 

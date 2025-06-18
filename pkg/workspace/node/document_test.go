@@ -181,7 +181,7 @@ func TestDocument_GetMetadata(t *testing.T) {
 		{
 			name: "simple key-value pairs",
 			metadata: map[string]any{
-				"title":  "Test Document", 
+				"title":  "Test Document",
 				"author": "John Doe",
 			},
 			expected: map[string]interface{}{

@@ -73,12 +73,12 @@ func (d *Document) GetMetadata() map[string]interface{} {
 	if d.metadata.root == nil {
 		return nil
 	}
-	
+
 	var metadata map[string]interface{}
 	if err := d.metadata.root.Decode(&metadata); err != nil {
 		return nil
 	}
-	
+
 	return metadata
 }
 
