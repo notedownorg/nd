@@ -22,9 +22,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         test-type: [unit, functional]
-    name: (${{ matrix.test-type }}) tests
+    name: ${{ matrix.test-type }} tests
     steps:
     - uses: actions/checkout@v4
     
