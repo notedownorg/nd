@@ -24,7 +24,7 @@ The functional tests:
 
 ## Test Structure
 
-- `client_test.go` - Test harness and client utilities
+- `harness_test.go` - Test harness and client utilities
 - `stream_test.go` - Main streaming functionality tests
 
 ## Key Features Tested

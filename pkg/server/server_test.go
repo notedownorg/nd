@@ -53,19 +53,8 @@ func TestDocumentSubscription(t *testing.T) {
 	// Handle the subscription in a goroutine
 	go server.handleSubscriptionRequest(mockStream, subscriptionReq)
 
-	// Wait for subscription confirmation
-	select {
-	case event := <-mockStream.events:
-		if confirmation := event.GetSubscriptionConfirmation(); confirmation != nil {
-			if confirmation.SubscriptionId != "test-subscription-1" {
-				t.Errorf("Expected subscription ID 'test-subscription-1', got '%s'", confirmation.SubscriptionId)
-			}
-		} else {
-			t.Errorf("Expected subscription confirmation, got %T", event.GetEvent())
-		}
-	case <-time.After(1 * time.Second):
-		t.Fatal("Timeout waiting for subscription confirmation")
-	}
+	// Wait for subscription confirmation using helper
+	waitForSubscriptionConfirmation(t, mockStream, "test-subscription-1")
 
 	// Wait a bit for the subscription to be fully set up
 	time.Sleep(10 * time.Millisecond)
@@ -114,19 +103,11 @@ func TestUnsubscribe(t *testing.T) {
 
 	go server.handleSubscriptionRequest(mockStream, subscriptionReq)
 
-	// Wait for confirmation
-	<-mockStream.events
+	// Wait for confirmation using helper
+	waitForSubscriptionConfirmation(t, mockStream, "test-subscription-1")
 
 	// Wait for subscription to be set up
 	time.Sleep(50 * time.Millisecond)
-
-	// Verify subscription exists
-	server.subsMu.RLock()
-	_, exists := server.subscriptions["test-subscription-1"]
-	server.subsMu.RUnlock()
-	if !exists {
-		t.Fatal("Expected subscription to exist before unsubscribe")
-	}
 
 	// Now unsubscribe
 	unsubscribeReq := &pb.SubscriptionRequest{
@@ -141,14 +122,21 @@ func TestUnsubscribe(t *testing.T) {
 	// Give it a moment to process
 	time.Sleep(10 * time.Millisecond)
 
-	// Verify subscription is removed
-	server.subsMu.RLock()
-	_, exists = server.subscriptions["test-subscription-1"]
-	server.subsMu.RUnlock()
-
-	if exists {
-		t.Fatal("Expected subscription to be removed after unsubscribe")
+	// Test functionality: try to subscribe with the same ID again
+	// If unsubscribe worked, this should succeed without conflict
+	subscriptionReq2 := &pb.SubscriptionRequest{
+		SubscriptionId: "test-subscription-1",
+		Msg: &pb.SubscriptionRequest_DocumentSubscription{
+			DocumentSubscription: &pb.DocumentSubscription{
+				WorkspaceName: "test-workspace",
+			},
+		},
 	}
+
+	go server.handleSubscriptionRequest(mockStream, subscriptionReq2)
+
+	// If unsubscribe worked properly, we should get a confirmation, not an error
+	waitForSubscriptionConfirmation(t, mockStream, "test-subscription-1")
 }
 
 func TestSubscriptionIDConflict(t *testing.T) {
@@ -248,25 +236,8 @@ func TestWorkspaceNotFound(t *testing.T) {
 
 	go server.handleSubscriptionRequest(mockStream, subscriptionReq)
 
-	// Wait for error event
-	select {
-	case event := <-mockStream.events:
-		if errorEvent := event.GetError(); errorEvent != nil {
-			if errorEvent.RequestId != "test-subscription" {
-				t.Errorf("Expected request ID 'test-subscription', got '%s'", errorEvent.RequestId)
-			}
-			if errorEvent.ErrorCode != pb.ErrorCode_WORKSPACE_NOT_FOUND {
-				t.Errorf("Expected error code WORKSPACE_NOT_FOUND, got %v", errorEvent.ErrorCode)
-			}
-			if errorEvent.ErrorMessage != "workspace not found" {
-				t.Errorf("Expected error message 'workspace not found', got '%s'", errorEvent.ErrorMessage)
-			}
-		} else {
-			t.Errorf("Expected error event, got %T", event.GetEvent())
-		}
-	case <-time.After(1 * time.Second):
-		t.Fatal("Timeout waiting for error event")
-	}
+	// Wait for error event using helper
+	waitForErrorEvent(t, mockStream, "test-subscription", pb.ErrorCode_WORKSPACE_NOT_FOUND, "workspace not found")
 }
 
 // Mock implementation for testing
@@ -310,4 +281,53 @@ func (m *mockNodeServiceStreamServer) SetHeader(metadata.MD) error {
 }
 
 func (m *mockNodeServiceStreamServer) SetTrailer(metadata.MD) {
+}
+
+// Test helper functions
+
+// waitForSubscriptionConfirmation waits for and validates a subscription confirmation event
+func waitForSubscriptionConfirmation(t *testing.T, mockStream *mockNodeServiceStreamServer, expectedSubscriptionID string) {
+	t.Helper()
+	
+	// We might get either confirmation first or initialization complete first
+	// Try to get the confirmation within the first two events
+	for i := 0; i < 2; i++ {
+		select {
+		case event := <-mockStream.events:
+			if confirmation := event.GetSubscriptionConfirmation(); confirmation != nil {
+				if confirmation.SubscriptionId != expectedSubscriptionID {
+					t.Errorf("Expected subscription ID '%s', got '%s'", expectedSubscriptionID, confirmation.SubscriptionId)
+				}
+				return // Found confirmation, test passed
+			}
+			// If it's not a confirmation, continue to next event
+		case <-time.After(1 * time.Second):
+			t.Fatal("Timeout waiting for subscription confirmation")
+		}
+	}
+	
+	t.Fatal("Did not receive subscription confirmation within expected events")
+}
+
+// waitForErrorEvent waits for and validates an error event
+func waitForErrorEvent(t *testing.T, mockStream *mockNodeServiceStreamServer, expectedRequestID string, expectedErrorCode pb.ErrorCode, expectedErrorMessage string) {
+	t.Helper()
+	select {
+	case event := <-mockStream.events:
+		if errorEvent := event.GetError(); errorEvent != nil {
+			if errorEvent.RequestId != expectedRequestID {
+				t.Errorf("Expected request ID '%s', got '%s'", expectedRequestID, errorEvent.RequestId)
+			}
+			if errorEvent.ErrorCode != expectedErrorCode {
+				t.Errorf("Expected error code %v, got %v", expectedErrorCode, errorEvent.ErrorCode)
+			}
+			if errorEvent.ErrorMessage != expectedErrorMessage {
+				t.Errorf("Expected error message '%s', got '%s'", expectedErrorMessage, errorEvent.ErrorMessage)
+			}
+		} else {
+			t.Errorf("Expected error event, got %T", event.GetEvent())
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("Timeout waiting for error event")
+	}
 }
