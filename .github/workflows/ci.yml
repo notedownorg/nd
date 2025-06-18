@@ -21,6 +21,10 @@ jobs:
   
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        test-type: [unit, functional]
+    name: Test (${{ matrix.test-type }})
     steps:
     - uses: actions/checkout@v4
     
@@ -28,5 +32,11 @@ jobs:
       with:
         github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
-    # Run both unit and functional tests
-    - run: make test-all
+    # Run tests based on matrix
+    - name: Run unit tests
+      if: matrix.test-type == 'unit'
+      run: make test-unit-race
+
+    - name: Run functional tests  
+      if: matrix.test-type == 'functional'
+      run: make test-functional
