@@ -24,7 +24,7 @@ jobs:
     strategy:
       matrix:
         test-type: [unit, functional]
-    name: Test (${{ matrix.test-type }})
+    name: (${{ matrix.test-type }}) tests
     steps:
     - uses: actions/checkout@v4
     
